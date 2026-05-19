@@ -1,0 +1,59 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Swift Package Manager
+/.build/
+/Packages/
+
+# Xcode
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# SwiftPM local configuration
+.swiftpm/configuration/
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+
+# Local binaries and generated artifacts
+/bin/
+/dist/
+/artifacts/
+*.dSYM/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Secrets and machine-local config
+.env
+.env.*
+!.env.example
+.netrc
+*.pem
+*.key
+*.p12
+*.mobileprovision
+
+# Claude / agent local state
+#
+# Keep reusable project instructions commit-friendly, but ignore local session
+# state and generated artifacts. If you add a public .claude/README.md,
+# .claude/CLAUDE.md, .claude/agents/, or .claude/commands/, Git will track it.
+.claude/local/
+.claude/cache/
+.claude/logs/
+.claude/transcripts/
+.claude/conversations/
+.claude/sessions/
+.claude/settings.local.json
+.claude/*.local.*
