@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build release binary
+        run: swift build -c release --product ofctl
+
+      - name: Stage artifact
+        run: |
+          mkdir -p artifacts
+          cp .build/release/ofctl artifacts/ofctl-macos
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofctl-macos
+          path: artifacts/ofctl-macos
+          if-no-files-found: error
