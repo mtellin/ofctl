@@ -3,6 +3,14 @@
 `ofctl` is intended to let Claude Code work with OmniFocus without installing an
 MCP server.
 
+On work-managed computers, configure `OFCTL_WORK_HOSTNAMES` with that Mac's
+hostname so `ofctl` automatically restricts Claude-facing reads and writes to
+Inbox items and projects under the OmniFocus `Work` folder.
+
+If OmniFocus launch targeting is unreliable, configure
+`OFCTL_OMNIFOCUS_BUNDLE_ID`, `OFCTL_OMNIFOCUS_APP_NAME`, or
+`OFCTL_OMNIFOCUS_APP_PATH` instead of falling back to raw automation URLs.
+
 ## Integration Model
 
 Claude should call `ofctl` as a local executable:
@@ -14,11 +22,15 @@ Claude should call `ofctl` as a local executable:
 The command surface is intentionally narrow:
 
 - `tasks` for read workflows
+- `task` for single-task inspection by ID
+- `perspectives` for discovering built-in and custom OmniFocus views
 - `add` for task creation
+- `add-group` for action group creation
 - `update` for controlled edits
+- `project-status` for controlled project state changes
 
-This is easier to review and approve than general-purpose AppleScript or a full
-OmniFocus MCP server.
+This is easier to review and approve than general-purpose application
+automation or a full OmniFocus MCP server.
 
 ## Preferred Claude Workflow
 
@@ -42,6 +54,23 @@ For richer context:
 ofctl tasks --tag "Alex Rivera" --include-notes
 ```
 
+For perspective-backed review:
+
+```sh
+ofctl perspectives --format text
+ofctl tasks --perspective Forecast --limit 50
+ofctl tasks --perspective "Waiting On" --limit 50
+```
+
+For focused day planning:
+
+```sh
+ofctl tasks --folder Work --available now --limit 50
+ofctl tasks --project "Product Launch" --available now --limit 50
+ofctl tasks --completed today --format text
+ofctl tasks --tag "@phone" --tag "@computer" --tag-mode any --limit 25
+```
+
 For migration from Markdown task notes:
 
 1. Read the Markdown task note.
@@ -55,10 +84,35 @@ Dry-run example:
 ```sh
 ofctl add "Ask Alex for project status" \
   --project "Work Follow-ups" \
-  --tag "Alex Rivera" \
+  --tag "People/Alex Rivera" \
   --tag "Waiting On" \
-  --tag "Work" \
+  --tag "Status/Work 💼" \
   --note-file /tmp/of-note.md \
+  --dry-run
+```
+
+Recurring task dry-run example:
+
+```sh
+ofctl add "Water plants" \
+  --due "2026-05-22" \
+  --repeat-rule "FREQ=WEEKLY;INTERVAL=1" \
+  --repeat-method due \
+  --dry-run
+```
+
+For Markdown notes that contain a short checklist, prefer an action group when
+the checklist represents ordered or related work under one outcome:
+
+```sh
+ofctl add-group "Launch checklist" \
+  --project "Product Launch" \
+  --sequential \
+  --note-file /tmp/of-note.md \
+  --dry-run
+
+ofctl add "Send launch note" \
+  --parent "$ACTION_GROUP_TASK_ID" \
   --dry-run
 ```
 
@@ -70,6 +124,8 @@ Use `--dry-run` before creating or updating tasks when:
 
 - The task name is subjective.
 - The target project is ambiguous.
+- A missing project would be created.
+- A task is being inserted into an action group.
 - Dates could be interpreted more than one way.
 - The operation touches multiple tasks.
 
@@ -81,6 +137,11 @@ ofctl tasks --available now --limit 25
 
 Use `--include-notes` only when notes are needed. Note conversion is more
 expensive than list queries.
+
+Prefer tag paths such as `People/$PERSON_NAME` and `Status/Work 💼` when
+creating or updating tasks. Plain person-looking missing tags are created under
+`People`, and plain `Work` resolves to `Status/Work 💼` when that tag exists,
+but paths make the intended parent auditable in the command.
 
 Preserve source context when migrating:
 
@@ -111,25 +172,79 @@ ofctl tasks --planned now --limit 25
 Waiting-on review:
 
 ```sh
+ofctl tasks --perspective "Waiting On" --limit 50
+```
+
+If there is no matching perspective, fall back to:
+
+```sh
 ofctl tasks --tag "Waiting On" --limit 50
+```
+
+Waiting-on items for one person:
+
+```sh
+ofctl tasks --tag "$PERSON_NAME" --tag "Waiting On" --limit 50
+```
+
+Inspect a known task ID:
+
+```sh
+ofctl task "$TASK_ID" --include-notes
+```
+
+Controlled task updates:
+
+```sh
+ofctl update "$TASK_ID" --add-tag "Waiting On" --dry-run
+ofctl update "$TASK_ID" --remove-tag "Waiting On" --dry-run
+ofctl update "$TASK_ID" --project none --dry-run
+ofctl update "$TASK_ID" --repeat-rule "FREQ=WEEKLY;INTERVAL=1" --repeat-method fixed --dry-run
+ofctl update "$TASK_ID" --repeat-rule none --dry-run
+ofctl update "$TASK_ID" --complete --dry-run
+ofctl update "$TASK_ID" --skip --dry-run
+```
+
+Controlled action group workflows:
+
+```sh
+ofctl add-group "Launch checklist" --project "$PROJECT_NAME" --sequential --dry-run
+ofctl add "Send launch note" --parent "$ACTION_GROUP_TASK_ID" --dry-run
+ofctl task "$ACTION_GROUP_TASK_ID" --include-children
+ofctl update "$ACTION_GROUP_TASK_ID" --parallel --dry-run
+ofctl update "$ACTION_GROUP_TASK_ID" --complete-with-children --dry-run
+```
+
+Use `--sequential` when child actions must happen in order. Use `--parallel`
+when children can be worked independently. Use `--complete-with-children` only
+when the group should automatically complete after all child tasks are complete.
+
+Controlled project status updates:
+
+```sh
+ofctl project-status "$PROJECT_NAME" --status on-hold --dry-run
 ```
 
 ## Known Limitations
 
-Multi-tag filtering is not fully implemented yet. If Claude passes multiple
-`--tag` values, the current parser retains the last one. Query one tag at a time
-and inspect returned tags until multi-tag support is added.
+Repeated `--tag` filters use AND semantics by default. Use `--tag-mode any`
+when a query should match any listed tag.
 
-There is no `task TASK_ID` command yet. To inspect one task, query a likely tag
-and filter client-side.
+Recurrence is represented as an ICS RRULE string in `repeatRule`. Query repeating
+tasks with `ofctl tasks --repeat-rule any`, query non-repeating tasks with
+`--repeat-rule none`, and clear recurrence with `ofctl update TASK_ID
+--repeat-rule none`. Use `--repeat-method fixed` for a regular fixed schedule
+that should not drift when completed late. `--repeat-method due` means due again
+after completion, and `--repeat-method defer` means defer again after completion.
 
 There are no bulk update commands. Claude should update tasks one at a time and
 report each result.
 
 ## Permission Model
 
-`ofctl` uses macOS automation to ask OmniFocus to evaluate Omni Automation
-JavaScript. macOS may prompt for Automation permission the first time it runs.
+`ofctl` uses direct Apple Events to ask OmniFocus to evaluate Omni Automation
+JavaScript. The task logic runs in OmniJS, and macOS may prompt for Automation
+permission the first time it runs.
 
 The executable does not run a daemon, open a network port, install a server, or
 receive remote requests. It only acts when invoked locally.

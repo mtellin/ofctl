@@ -21,9 +21,18 @@ notes, but Claude needs a stable interface to OmniFocus to do that work safely.
 `ofctl` provides that interface:
 
 - Query tasks for meeting agendas, especially by person tag.
-- Inspect planned, due, deferred, and available work.
+- Inspect planned, due, deferred, completed, and available work.
+- Query tasks from built-in or custom OmniFocus perspectives.
+- Scope day-planning queries by project, folder, tags, and flagged state.
 - Add tasks from Claude workflows without using OmniFocus UI automation directly.
-- Update task metadata such as project, tags, dates, duration, and notes.
+- Create action groups and add child tasks to an existing action group.
+- Update task metadata such as project, tags, dates, duration, notes, and
+  completion/drop state.
+- Set action group ordering and completion behavior.
+- Create a top-level OmniFocus project when a task is added or moved to a
+  project name that does not exist.
+- Skip the current occurrence of a repeating task.
+- Change project status between active, on hold, completed, and dropped.
 - Convert Markdown notes to OmniFocus rich text on write.
 - Convert OmniFocus rich notes back to Markdown on read.
 - Keep Claude-facing automation narrow enough to be acceptable on machines where
@@ -32,6 +41,8 @@ notes, but Claude needs a stable interface to OmniFocus to do that work safely.
 ## Design Goals
 
 - Native macOS tooling: Swift CLI plus OmniFocus automation.
+- Omni Automation JavaScript executed through direct Apple Events, keeping the
+  task logic in OmniJS while avoiding a shell script runner in the hot path.
 - Minimal command surface: explicit commands instead of arbitrary app control.
 - Claude-friendly output: JSON by default, text output for quick terminal checks.
 - Safe defaults: list queries omit rich notes unless requested.
@@ -43,7 +54,7 @@ notes, but Claude needs a stable interface to OmniFocus to do that work safely.
 - macOS
 - OmniFocus 4.7+ with the database migrated for Planned Dates
 - Swift toolchain
-- macOS Automation permission for `ofctl`/`osascript` to control OmniFocus
+- macOS Automation permission for `ofctl` to control OmniFocus
 
 ## Build
 
@@ -78,15 +89,74 @@ Find tasks planned up to the current moment:
 ofctl tasks --planned now --format text
 ```
 
+Find tasks in a project or folder:
+
+```sh
+ofctl tasks --project "Product Launch" --format text
+ofctl tasks --folder Work --available now --format text
+```
+
+Find completed work:
+
+```sh
+ofctl tasks --completed today --format text
+```
+
+List OmniFocus perspectives:
+
+```sh
+ofctl perspectives --format text
+```
+
+Query tasks from a perspective:
+
+```sh
+ofctl tasks --perspective Forecast --format text
+ofctl tasks --perspective "Waiting On" --limit 50
+```
+
+Fetch one task by ID:
+
+```sh
+ofctl task TASK_ID --include-notes
+```
+
+Create an action group and add a child task:
+
+```sh
+ofctl add-group "Launch checklist" \
+  --project "Product Launch" \
+  --sequential
+
+ofctl add "Send launch note" --parent ACTION_GROUP_TASK_ID
+```
+
+Read an action group with its children:
+
+```sh
+ofctl task ACTION_GROUP_TASK_ID --include-children
+```
+
 Add a waiting-on task:
 
 ```sh
 ofctl add "Ask Alex for project status" \
   --project "Work Follow-ups" \
-  --tag "Alex Rivera" \
+  --tag "People/Alex Rivera" \
   --tag "Waiting On" \
-  --tag "Work" \
+  --tag "Status/Work 💼" \
   --note "Waiting on Alex Rivera."
+```
+
+Add or find repeating tasks:
+
+```sh
+ofctl add "Water plants" \
+  --due "2026-05-22" \
+  --repeat-rule "FREQ=WEEKLY;INTERVAL=1" \
+  --repeat-method due
+
+ofctl tasks --repeat-rule any --format text
 ```
 
 Dry-run any write first:
@@ -105,11 +175,34 @@ ofctl add "Ask Taylor about launch date" --tag "Taylor Morgan" --dry-run
 
 ## Current Commands
 
-- `ofctl tasks`: query tasks by tag, availability, planned date, defer date, due
-  date, completion/dropped state, and output format.
+- `ofctl perspectives`: list built-in and custom OmniFocus perspectives.
+- `ofctl task`: fetch one task by OmniFocus ID.
+- `ofctl tasks`: query tasks by project, folder, tag, availability, planned
+  date, defer date, due date, repeat rule, completion date, perspective,
+  flagged state, completion/dropped state, and output format.
 - `ofctl add`: create a task with project, tags, defer/planned/due dates,
-  duration, and Markdown notes.
-- `ofctl update`: update task name, project, tags, dates, duration, and notes.
+  repeat rule, duration, Markdown notes, action group settings, or a parent
+  action group.
+- `ofctl add-group`: create an action group, optionally sequential/parallel and
+  optionally completed by its children.
+- `ofctl update`: update task name, project, tags, dates, repeat rule,
+  duration, notes, completion state, dropped state, action group settings, and
+  skipped repeating occurrences.
+- `ofctl project-status`: set a project to active, on hold, completed, or
+  dropped.
+
+Tags can be passed as leaf names or slash-delimited paths such as
+`People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created
+under their parent; plain person-looking tags default under `People`, and plain
+`Work` resolves to `Status/Work 💼` when that tag exists.
+
+Recurrence uses OmniFocus repeat rules through ICS RRULE strings. Use
+`--repeat-rule "FREQ=WEEKLY;INTERVAL=1"` to set a repeat, `--repeat-method
+fixed|due|defer` to choose the repeat anchor, `--repeat-rule none` on `update`
+to clear a repeat, and `tasks --repeat-rule any|none|RRULE` to audit repeating
+or non-repeating tasks. `fixed` is a regular fixed schedule that does not drift
+when completed late; `due` means due again after completion; `defer` means defer
+again after completion.
 
 Run:
 
@@ -127,6 +220,25 @@ interface because it constrains what Claude can ask for:
 - Broad task queries default to `--limit 100`.
 - Rich note conversion is opt-in for queries with `--include-notes`.
 - Notes preserve source context when migrating from Markdown task notes.
+
+### Work Computer Privacy Scope
+
+Set `OFCTL_WORK_HOSTNAMES` to a comma-separated list of hostnames on machines
+where Claude should only see work data:
+
+```sh
+export OFCTL_WORK_HOSTNAMES="work-macbook-hostname"
+```
+
+When the current hostname matches that list, `ofctl` only returns or mutates
+Inbox items and items whose containing project is under an OmniFocus folder
+named `Work`. Direct task lookups and write commands for other folders fail
+with a privacy-scope error.
+
+If LaunchServices cannot reliably find OmniFocus, set
+`OFCTL_OMNIFOCUS_BUNDLE_ID`, `OFCTL_OMNIFOCUS_APP_NAME`, or
+`OFCTL_OMNIFOCUS_APP_PATH` to override the default target
+`com.omnigroup.OmniFocus4` / `OmniFocus` / `/Applications/OmniFocus.app`.
 
 ## Development
 

@@ -40,7 +40,20 @@ Avoid person tags like `@alex` unless the whole tag system changes. The existing
 Use status/domain tags where helpful:
 
 - `Waiting On`
-- `Work`
+- `Work 💼`
+
+Prefer tag paths when calling `ofctl` so tags are created or resolved under the
+intended parent:
+
+```sh
+ofctl add "Ask Alex for project status" \
+  --tag "People/Alex Rivera" \
+  --tag "Status/Work 💼"
+```
+
+When a plain person-looking tag such as `Alex Rivera` is missing, `ofctl`
+creates it under `People` if that tag exists. When `Status/Work 💼` exists,
+plain `Work` resolves to that tag instead of creating a root-level `Work` tag.
 
 ## Waiting On
 
@@ -55,9 +68,9 @@ Example:
 ```sh
 ofctl add "Ask Alex for project status" \
   --project "Work Follow-ups" \
-  --tag "Alex Rivera" \
+  --tag "People/Alex Rivera" \
   --tag "Waiting On" \
-  --tag "Work"
+  --tag "Status/Work 💼"
 ```
 
 OmniFocus does not have a task-level "On Hold" status. The common OmniFocus/GTD
@@ -96,6 +109,17 @@ Use due dates only for real deadlines:
 ofctl update TASK_ID --due "2026-05-30"
 ```
 
+Use recurrence for work that should create a next occurrence after completion.
+Store recurrence as an auditable ICS RRULE string:
+
+```sh
+ofctl add "Water plants" --due "2026-05-22" --repeat-rule "FREQ=WEEKLY;INTERVAL=1" --repeat-method due
+```
+
+Use `--repeat-method fixed` for a regular fixed schedule that should not drift
+when completed late. Use `--repeat-method due` for "due again after completion"
+and `--repeat-method defer` for "defer again after completion."
+
 ## Duration
 
 Use estimated minutes for planning:
@@ -123,6 +147,47 @@ Work Follow-ups
 For Markdown task-note migration, if a note clearly belongs to a project, set its
 frontmatter `project` field before or during cleanup.
 
+## Action Groups
+
+Use an action group when a single outcome naturally breaks into a small set of
+child actions that should stay together.
+
+Good action group candidates:
+
+- A checklist that belongs to one project outcome.
+- A sequence where later actions are blocked by earlier actions.
+- A small batch of related actions that should be reviewed as one unit.
+
+Prefer a normal task instead when the item is a single next action, even if the
+note contains context or acceptance criteria.
+
+Sequential groups:
+
+```sh
+ofctl add-group "Launch checklist" \
+  --project "Product Launch" \
+  --sequential
+```
+
+Parallel groups:
+
+```sh
+ofctl add-group "Prep demo environment" \
+  --project "Product Launch" \
+  --parallel
+```
+
+Add children by parent task ID:
+
+```sh
+ofctl add "Send launch note" --parent ACTION_GROUP_TASK_ID
+ofctl add "Post release checklist" --parent ACTION_GROUP_TASK_ID
+```
+
+Use `--complete-with-children` only when completing every child should complete
+the group automatically. Leave it off when the parent needs a final review or
+wrap-up step.
+
 ## Notes And Markdown
 
 Callers should send Markdown. `ofctl` converts supported Markdown to OmniFocus
@@ -130,12 +195,16 @@ rich text on write and converts rich notes back to Markdown on read.
 
 Supported mappings:
 
-- `[title](url)` links
 - `**bold**`
 - `*italic*`
 - `` `inline code` ``
 - `#`, `##`, and `###` headings
 - OmniFocus bullet text normalized to Markdown-style list markers on read
+
+Markdown links are preserved losslessly as readable text in the form
+`title (url)`. OmniFocus may auto-link supported plain URLs, but `ofctl` does
+not force custom URL schemes such as `obsidian://` into rich-text links because
+OmniFocus rejects some schemes during automation.
 
 Prefer `--note-file` for multiline notes:
 
