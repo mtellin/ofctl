@@ -193,6 +193,17 @@ Inspect a known task ID:
 ofctl task "$TASK_ID" --include-notes
 ```
 
+Set the day's single top-priority task (flag it):
+
+```sh
+ofctl add "$TASK_NAME" --project "$PROJECT_NAME" --flag --dry-run
+ofctl update "$TASK_ID" --flag --dry-run
+ofctl update "$TASK_ID" --no-flag --dry-run
+```
+
+Only one task should be flagged at a time. Flag conveys "do this first today."
+Use `tasks --flagged` to find the current flagged task before setting a new one.
+
 Controlled task updates:
 
 ```sh
@@ -226,6 +237,18 @@ ofctl project-status "$PROJECT_NAME" --status on-hold --dry-run
 ```
 
 ## Known Limitations
+
+`ofctl` cannot create OmniFocus folders or single-action list projects.
+`ofctl add --project NAME` creates a regular parallel project. To create a
+folder inside another folder, or to set a project as a single-action list, use
+JXA (`osascript -l JavaScript`) for structure creation, then send OmniAutomation
+JavaScript via Apple Events to set `containsSingletonActions = true`. See the
+user guide "Creating Folders and Single-Action List Projects" section for the
+full workflow and a reusable Swift runner.
+
+Note: `project.singleton = true` in OmniAutomation reads back as true but does
+not change the project type in the OmniFocus UI. Always use
+`project.containsSingletonActions = true` instead.
 
 Repeated `--tag` filters use AND semantics by default. Use `--tag-mode any`
 when a query should match any listed tag.

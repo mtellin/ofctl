@@ -69,6 +69,7 @@ public struct AddTask: Equatable {
     public var note: String?
     public var sequential: Bool?
     public var completedByChildren: Bool?
+    public var flagged: Bool?
     public var actionGroup: Bool
     public var dryRun: Bool
 }
@@ -95,6 +96,7 @@ public struct UpdateTask: Equatable {
     public var drop: Bool
     public var dropAllOccurrences: Bool
     public var skip: Bool
+    public var flagged: Bool?
     public var dryRun: Bool
 }
 
@@ -135,9 +137,9 @@ public enum CLI {
       ofctl perspectives [--format json|text]
       ofctl task TASK_ID [--include-notes] [--include-children] [--format json|text]
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
-      ofctl add NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--dry-run]
-      ofctl add-group NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--dry-run]
-      ofctl update TASK_ID [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--drop] [--all-occurrences] [--skip] [--dry-run]
+      ofctl add NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
+      ofctl add-group NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
+      ofctl update TASK_ID [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
 
     Dates:
@@ -327,6 +329,7 @@ public enum CLI {
             note: nil,
             sequential: actionGroup ? false : nil,
             completedByChildren: actionGroup ? false : nil,
+            flagged: nil,
             actionGroup: actionGroup,
             dryRun: false
         )
@@ -371,6 +374,10 @@ public enum CLI {
             case "--no-complete-with-children":
                 task.completedByChildren = false
                 task.actionGroup = true
+            case "--flag":
+                task.flagged = true
+            case "--no-flag":
+                task.flagged = false
             case "--dry-run":
                 task.dryRun = true
             default:
@@ -416,6 +423,7 @@ public enum CLI {
             drop: false,
             dropAllOccurrences: false,
             skip: false,
+            flagged: nil,
             dryRun: false
         )
 
@@ -475,6 +483,10 @@ public enum CLI {
                 task.dropAllOccurrences = true
             case "--skip":
                 task.skip = true
+            case "--flag":
+                task.flagged = true
+            case "--no-flag":
+                task.flagged = false
             case "--dry-run":
                 task.dryRun = true
             default:

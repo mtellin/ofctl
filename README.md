@@ -159,6 +159,14 @@ ofctl add "Water plants" \
 ofctl tasks --repeat-rule any --format text
 ```
 
+Flag the day's top-priority task:
+
+```sh
+ofctl add "Ship the deck" --project "Product Launch" --flag
+ofctl update TASK_ID --flag
+ofctl update TASK_ID --no-flag
+```
+
 Dry-run any write first:
 
 ```sh
@@ -181,13 +189,13 @@ ofctl add "Ask Taylor about launch date" --tag "Taylor Morgan" --dry-run
   date, defer date, due date, repeat rule, completion date, perspective,
   flagged state, completion/dropped state, and output format.
 - `ofctl add`: create a task with project, tags, defer/planned/due dates,
-  repeat rule, duration, Markdown notes, action group settings, or a parent
-  action group.
+  repeat rule, duration, Markdown notes, action group settings, flag state, or
+  a parent action group.
 - `ofctl add-group`: create an action group, optionally sequential/parallel and
   optionally completed by its children.
 - `ofctl update`: update task name, project, tags, dates, repeat rule,
-  duration, notes, completion state, dropped state, action group settings, and
-  skipped repeating occurrences.
+  duration, notes, completion state, dropped state, flag state, action group
+  settings, and skipped repeating occurrences.
 - `ofctl project-status`: set a project to active, on hold, completed, or
   dropped.
 

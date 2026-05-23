@@ -361,6 +361,7 @@ enum OmniJavaScript {
         let estimatedMinutes = task.estimatedMinutes.map(String.init) ?? "null"
         let sequential = optionalBoolAssignment(task.sequential)
         let completedByChildren = optionalBoolAssignment(task.completedByChildren)
+        let flagged = optionalBoolAssignment(task.flagged)
         let privacy = try privacyPrelude(privacyScope)
 
         return """
@@ -383,6 +384,7 @@ enum OmniJavaScript {
             note: \(note),
             sequential: \(sequential),
             completedByChildren: \(completedByChildren),
+            flagged: \(flagged),
             actionGroup: \(task.actionGroup ? "true" : "false"),
             dryRun: \(task.dryRun ? "true" : "false")
           };
@@ -493,6 +495,7 @@ enum OmniJavaScript {
           task.estimatedMinutes = input.estimatedMinutes;
           if (input.sequential !== undefined) { task.sequential = input.sequential; }
           if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
+          if (input.flagged !== undefined) { task.flagged = input.flagged; }
           input.tags.map(name => tagNamedOrCreated(name)).forEach(tag => task.addTag(tag));
 
           return JSON.stringify({
@@ -523,6 +526,7 @@ enum OmniJavaScript {
         let completedAt = try jsonLiteral(task.completedAt)
         let sequential = optionalBoolAssignment(task.sequential)
         let completedByChildren = optionalBoolAssignment(task.completedByChildren)
+        let flagged = optionalBoolAssignment(task.flagged)
         let privacy = try privacyPrelude(privacyScope)
 
         return """
@@ -547,6 +551,7 @@ enum OmniJavaScript {
             note: \(note),
             sequential: \(sequential),
             completedByChildren: \(completedByChildren),
+            flagged: \(flagged),
             complete: \(task.complete ? "true" : "false"),
             completedAt: \(completedAt),
             incomplete: \(task.incomplete ? "true" : "false"),
@@ -661,6 +666,7 @@ enum OmniJavaScript {
           if (input.estimatedMinutes !== undefined) { task.estimatedMinutes = input.estimatedMinutes; }
           if (input.sequential !== undefined) { task.sequential = input.sequential; }
           if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
+          if (input.flagged !== undefined) { task.flagged = input.flagged; }
           if (input.clearTags) { task.clearTags(); }
           input.removeTags.forEach(name => task.removeTag(existingTagNamed(name)));
           input.addTags.forEach(name => task.addTag(tagNamedOrCreated(name)));

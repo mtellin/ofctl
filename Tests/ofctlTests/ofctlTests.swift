@@ -320,6 +320,93 @@ import Testing
     ))))
 }
 
+@Test func parsesAddTaskWithFlag() throws {
+    let flagged = try CLI.parse(["ofctl", "add", "Ship the deck", "--flag"])
+    #expect(flagged == CommandLineOptions(command: .add(AddTask(
+        name: "Ship the deck",
+        project: nil,
+        parent: nil,
+        tags: [],
+        flagged: true,
+        actionGroup: false,
+        dryRun: false
+    ))))
+
+    let unflagged = try CLI.parse(["ofctl", "add", "Ship the deck", "--no-flag"])
+    #expect(unflagged == CommandLineOptions(command: .add(AddTask(
+        name: "Ship the deck",
+        project: nil,
+        parent: nil,
+        tags: [],
+        flagged: false,
+        actionGroup: false,
+        dryRun: false
+    ))))
+
+    let noFlagArg = try CLI.parse(["ofctl", "add", "Ship the deck"])
+    #expect(noFlagArg == CommandLineOptions(command: .add(AddTask(
+        name: "Ship the deck",
+        project: nil,
+        parent: nil,
+        tags: [],
+        flagged: nil,
+        actionGroup: false,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesUpdateTaskWithFlag() throws {
+    let flagged = try CLI.parse(["ofctl", "update", "abc123", "--flag"])
+    #expect(flagged == CommandLineOptions(command: .update(UpdateTask(
+        id: "abc123",
+        name: nil,
+        project: nil,
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        flagged: true,
+        dryRun: false
+    ))))
+
+    let unflagged = try CLI.parse(["ofctl", "update", "abc123", "--no-flag"])
+    #expect(unflagged == CommandLineOptions(command: .update(UpdateTask(
+        id: "abc123",
+        name: nil,
+        project: nil,
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        flagged: false,
+        dryRun: false
+    ))))
+}
+
 @Test func buildsFourCharacterAppleEventCodes() {
     #expect(fourCharCode("OFOC") == 0x4f464f43)
     #expect(fourCharCode("OFEJ") == 0x4f46454a)
