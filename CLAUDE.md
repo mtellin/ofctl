@@ -80,6 +80,29 @@ swift run ofctl tasks --available now --limit 10 --format text
   taxonomy, date semantics, and duration conventions before adding fields that touch
   those areas.
 
+## Releases
+
+Releases are triggered by pushing a `v*` tag — **commits to `main` do not auto-release.**
+After any session that merges user-facing changes, suggest tagging a release.
+
+**When to suggest a new release:**
+- A new command or subcommand was added
+- An existing command gained new flags or changed behavior
+- A bug fix that affects correctness or output
+
+**Versioning (semver, currently at v0.1.0):**
+- `patch` (v0.1.x) — bug fixes, no new commands or flags
+- `minor` (v0.x.0) — new commands, new flags, behavior changes (backwards-compatible)
+- `major` (v1.0.0+) — breaking changes to command syntax or output format
+
+**How to cut a release:**
+```sh
+git tag v0.X.Y
+git push origin v0.X.Y
+```
+The release workflow builds the binary, packages it as `ofctl-macos-arm64.tar.gz`,
+generates a SHA-256 checksum, and publishes a GitHub Release automatically.
+
 ## Documentation Files
 
 - [`README.md`](README.md) — Quick start, current command surface, build instructions
