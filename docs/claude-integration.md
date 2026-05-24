@@ -236,6 +236,13 @@ Controlled project status updates:
 ofctl project-status "$PROJECT_NAME" --status on-hold --dry-run
 ```
 
+Controlled project moves (destination must be within the `Work` folder under
+work privacy scope):
+
+```sh
+ofctl project-move "$PROJECT_NAME" --to-folder Work --dry-run
+```
+
 ## Known Limitations
 
 `ofctl` cannot create OmniFocus folders or single-action list projects.

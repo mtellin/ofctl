@@ -766,6 +766,35 @@ Use `--dry-run` to preview the project status mutation:
 ofctl project-status "Product Launch" --status on-hold --dry-run
 ```
 
+## Move A Project
+
+Move a project into a folder:
+
+```sh
+ofctl project-move "Home Maintenance" --to-folder Home
+ofctl project-move "Side Project" --to-folder Personal
+```
+
+Move a project back to the library top level (no folder):
+
+```sh
+ofctl project-move "Home Maintenance" --to-folder none
+```
+
+Nested folders are supported using a slash-delimited path. The destination is
+resolved by exact full-path match first, then falls back to leaf name if
+unambiguous:
+
+```sh
+ofctl project-move "Sub-initiative" --to-folder "Work/Q2 Planning"
+```
+
+Use `--dry-run` to preview without mutating:
+
+```sh
+ofctl project-move "Home Maintenance" --to-folder Home --dry-run
+```
+
 ## Common Queries
 
 Person agenda:

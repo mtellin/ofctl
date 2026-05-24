@@ -68,6 +68,10 @@ public struct OmniFocusClient {
     public func updateProjectStatus(_ update: UpdateProjectStatus) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.updateProjectStatus(update, privacyScope: privacyScope))
     }
+
+    public func moveProject(_ move: MoveProject) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.moveProject(move, privacyScope: privacyScope))
+    }
 }
 
 enum OmniJavaScript {
@@ -391,6 +395,13 @@ enum OmniJavaScript {
 
           function parseDate(value) {
             if (!value) { return null; }
+            const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+            if (value === "now") { return new Date(); }
+            if (value === "today") { return midnight(); }
+            if (value === "tomorrow") { const d = midnight(); d.setDate(d.getDate() + 1); return d; }
+            if (value === "yesterday") { const d = midnight(); d.setDate(d.getDate() - 1); return d; }
+            const ymd = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+            if (ymd) { return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])); }
             const date = new Date(value);
             if (Number.isNaN(date.valueOf())) {
               throw new Error(`Invalid date: ${value}`);
@@ -563,6 +574,13 @@ enum OmniJavaScript {
 
           function parseDate(value) {
             if (value === null) { return null; }
+            const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+            if (value === "now") { return new Date(); }
+            if (value === "today") { return midnight(); }
+            if (value === "tomorrow") { const d = midnight(); d.setDate(d.getDate() + 1); return d; }
+            if (value === "yesterday") { const d = midnight(); d.setDate(d.getDate() - 1); return d; }
+            const ymd = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+            if (ymd) { return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])); }
             const date = new Date(value);
             if (Number.isNaN(date.valueOf())) {
               throw new Error(`Invalid date: ${value}`);
@@ -750,6 +768,91 @@ enum OmniJavaScript {
               id: project.id.primaryKey,
               name: project.name,
               status: input.status
+            },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func moveProject(_ move: MoveProject, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(move.project)
+        let folder = try jsonLiteral(move.folder)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            project: \(project),
+            folder: \(folder),
+            dryRun: \(move.dryRun ? "true" : "false")
+          };
+
+          function projectNamed(name) {
+            const project = flattenedProjects.byName(name);
+            if (!project) {
+              throw new Error(`Project not found: ${name}`);
+            }
+            return project;
+          }
+
+          function folderForPath(pathStr) {
+            const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
+            if (segments.length === 0) {
+              throw new Error(`Invalid folder path: ${pathStr}`);
+            }
+            const joined = segments.join("/");
+            // exact full-path match
+            const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
+            if (exactMatches.length === 1) { return exactMatches[0]; }
+            if (exactMatches.length > 1) {
+              throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
+            }
+            // leaf-name fallback (single segment only)
+            if (segments.length === 1) {
+              const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
+              if (leafMatches.length === 1) { return leafMatches[0]; }
+              if (leafMatches.length > 1) {
+                throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
+              }
+            }
+            throw new Error(`Folder not found: ${pathStr}`);
+          }
+
+          function folderAllowedByPrivacyScope(folder) {
+            if (!privacyScope) { return true; }
+            if (!folder) { return false; }
+            return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
+          }
+
+          const project = projectNamed(input.project);
+          assertProjectAvailableInPrivacyScope(project, `Project not found or not available in current privacy scope: ${input.project}`);
+
+          let folder = null;
+          if (input.folder !== null) {
+            folder = folderForPath(input.folder);
+            if (!folderAllowedByPrivacyScope(folder)) {
+              throw new Error(`Destination folder not available in current privacy scope: ${input.folder}`);
+            }
+          } else if (privacyScope) {
+            throw new Error(`Moving a project to the top level is not allowed in the current privacy scope`);
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, project: input, meta: { privacyScope } }, null, 2);
+          }
+
+          const destination = folder ? folder.ending : library.ending;
+          moveSections([project], destination);
+
+          return JSON.stringify({
+            project: {
+              id: project.id.primaryKey,
+              name: project.name,
+              folder: folder ? folderPath(folder) : []
             },
             meta: { privacyScope }
           }, null, 2);

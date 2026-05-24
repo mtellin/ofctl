@@ -593,6 +593,33 @@ import Testing
     ))))
 }
 
+@Test func parsesProjectMove() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-move", "Home Maintenance",
+        "--to-folder", "Home",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .projectMove(MoveProject(
+        project: "Home Maintenance",
+        folder: "Home",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesProjectMoveToTopLevel() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-move", "Home Maintenance",
+        "--to-folder", "none",
+    ])
+
+    #expect(options == CommandLineOptions(command: .projectMove(MoveProject(
+        project: "Home Maintenance",
+        folder: nil,
+        dryRun: false
+    ))))
+}
+
 @Test func workPrivacyScopeActivatesFromEnvironmentHostnames() {
     #expect(PrivacyScope.fromEnvironment(
         ["OFCTL_WORK_HOSTNAMES": "office-mbp, other-host"],
@@ -639,6 +666,13 @@ import Testing
     #expect(updateScript.contains("!task || !taskAllowedByPrivacyScope(task)"))
     #expect(updateScript.contains("!dryRunProject.project || !projectAllowedByPrivacyScope(dryRunProject.project)"))
     #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
+
+    let moveScript = try OmniJavaScript.moveProject(
+        MoveProject(project: "Home Maintenance", folder: "Home", dryRun: true),
+        privacyScope: .work
+    )
+    #expect(moveScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    #expect(moveScript.contains("folderAllowedByPrivacyScope(folder)"))
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {

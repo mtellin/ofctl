@@ -136,6 +136,10 @@ ofctl update TASK_ID --duration none
 
 ## Projects
 
+Projects belong inside a folder (Home, Personal, Work, or Routines). When
+`ofctl add --project NAME` creates a new project it lands at the library top
+level; use `ofctl project-move NAME --to-folder FOLDER` to place it correctly.
+
 Use the real OmniFocus project when one exists.
 
 For people reminders that are not tied to a specific project, use:

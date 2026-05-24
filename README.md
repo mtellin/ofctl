@@ -33,6 +33,7 @@ notes, but Claude needs a stable interface to OmniFocus to do that work safely.
   project name that does not exist.
 - Skip the current occurrence of a repeating task.
 - Change project status between active, on hold, completed, and dropped.
+- Move a project into a folder (or back to the library top level).
 - Convert Markdown notes to OmniFocus rich text on write.
 - Convert OmniFocus rich notes back to Markdown on read.
 - Keep Claude-facing automation narrow enough to be acceptable on machines where
@@ -198,6 +199,8 @@ ofctl add "Ask Taylor about launch date" --tag "Taylor Morgan" --dry-run
   settings, and skipped repeating occurrences.
 - `ofctl project-status`: set a project to active, on hold, completed, or
   dropped.
+- `ofctl project-move`: move a project into a folder (or to the library top
+  level with `--to-folder none`).
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created
