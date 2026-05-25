@@ -25,6 +25,16 @@ public struct CommandLineOptions: Equatable {
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
         case projectCreate(CreateProject)
+        case folderCreate(CreateFolder)
+        case tags(TagsQuery)
+        case tagCreate(CreateTag)
+        case tagRename(RenameTag)
+        case tagDelete(DeleteTag)
+        case tagMove(MoveTag)
+        case taskDelete(DeleteTasks)
+        case projectDelete(DeleteProject)
+        case projects(ProjectsQuery)
+        case projectReview(UpdateProjectReview)
     }
 
     public var command: Command
@@ -77,7 +87,7 @@ public struct AddTask: Equatable {
 }
 
 public struct UpdateTask: Equatable {
-    public var id: String
+    public var ids: [String]
     public var name: String?
     public var project: String??
     public var addTags: [String]
@@ -122,6 +132,64 @@ public struct CreateProject: Equatable {
     public var dryRun: Bool
 }
 
+public struct CreateFolder: Equatable {
+    public var name: String
+    public var parent: String?
+    public var dryRun: Bool
+}
+
+public struct TagsQuery: Equatable {
+    public var format: OutputFormat
+}
+
+public struct CreateTag: Equatable {
+    public var name: String
+    public var parent: String?
+    public var dryRun: Bool
+}
+
+public struct RenameTag: Equatable {
+    public var tag: String
+    public var newName: String
+    public var dryRun: Bool
+}
+
+public struct DeleteTag: Equatable {
+    public var tag: String
+    public var dryRun: Bool
+}
+
+public struct MoveTag: Equatable {
+    public var tag: String
+    public var newParent: String?
+    public var dryRun: Bool
+}
+
+public struct DeleteTasks: Equatable {
+    public var ids: [String]
+    public var dryRun: Bool
+}
+
+public struct DeleteProject: Equatable {
+    public var project: String
+    public var dryRun: Bool
+}
+
+public struct ProjectsQuery: Equatable {
+    public var folder: String?
+    public var status: ProjectStatus?
+    public var dueForReview: Bool
+    public var limit: Int?
+    public var format: OutputFormat
+}
+
+public struct UpdateProjectReview: Equatable {
+    public var project: String
+    public var markReviewed: Bool
+    public var interval: String??
+    public var dryRun: Bool
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -155,10 +223,20 @@ public enum CLI {
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
       ofctl add NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
       ofctl add-group NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
-      ofctl update TASK_ID [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
+      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
+      ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
+      ofctl tags [--format json|text]
+      ofctl tag-create NAME [--parent TAG_PATH] [--dry-run]
+      ofctl tag-rename TAG_PATH --to NEW_NAME [--dry-run]
+      ofctl tag-delete TAG_PATH [--dry-run]
+      ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
+      ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
+      ofctl project-delete PROJECT_NAME [--dry-run]
+      ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
+      ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -197,6 +275,26 @@ public enum CLI {
             return try CommandLineOptions(command: .projectMove(parseMoveProject(args)))
         case "project-create":
             return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
+        case "folder-create":
+            return try CommandLineOptions(command: .folderCreate(parseCreateFolder(args)))
+        case "tags":
+            return CommandLineOptions(command: .tags(TagsQuery(format: try parseFormatOnly(args, command: "tags"))))
+        case "tag-create":
+            return try CommandLineOptions(command: .tagCreate(parseCreateTag(args)))
+        case "tag-rename":
+            return try CommandLineOptions(command: .tagRename(parseRenameTag(args)))
+        case "tag-delete":
+            return try CommandLineOptions(command: .tagDelete(parseDeleteTag(args)))
+        case "tag-move":
+            return try CommandLineOptions(command: .tagMove(parseMoveTag(args)))
+        case "task-delete":
+            return try CommandLineOptions(command: .taskDelete(parseDeleteTasks(args)))
+        case "project-delete":
+            return try CommandLineOptions(command: .projectDelete(parseDeleteProject(args)))
+        case "projects":
+            return try CommandLineOptions(command: .projects(parseProjectsQuery(args)))
+        case "project-review":
+            return try CommandLineOptions(command: .projectReview(parseUpdateProjectReview(args)))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -419,12 +517,19 @@ public enum CLI {
 
     private static func parseUpdateTask(_ args: [String]) throws -> UpdateTask {
         var parser = OptionParser(args)
-        guard let id = parser.next(), !id.hasPrefix("--") else {
-            throw CLIError.usage("update requires a task id\n\n\(help)")
+        var ids: [String] = []
+
+        while let arg = parser.peek(), !arg.hasPrefix("--") {
+            _ = parser.next()
+            ids.append(arg)
+        }
+
+        guard !ids.isEmpty else {
+            throw CLIError.usage("update requires at least one task id\n\n\(help)")
         }
 
         var task = UpdateTask(
-            id: id,
+            ids: ids,
             name: nil,
             project: nil,
             addTags: [],
@@ -626,6 +731,241 @@ public enum CLI {
         return CreateProject(name: name, folder: folder, singleton: singleton, onHold: onHold, dryRun: dryRun)
     }
 
+    private static func parseProjectsQuery(_ args: [String]) throws -> ProjectsQuery {
+        var parser = OptionParser(args)
+        var query = ProjectsQuery(
+            folder: nil,
+            status: nil,
+            dueForReview: false,
+            limit: 100,
+            format: .json
+        )
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--folder":
+                query.folder = try parser.value(after: arg)
+            case "--status":
+                let value = try parser.value(after: arg)
+                guard let status = ProjectStatus(rawValue: value) else {
+                    throw CLIError.usage("Unsupported project status: \(value)")
+                }
+                query.status = status
+            case "--due-for-review":
+                query.dueForReview = true
+            case "--limit":
+                let value = try parser.value(after: arg)
+                guard let limit = Int(value), limit > 0 else {
+                    throw CLIError.usage("--limit must be a positive integer")
+                }
+                query.limit = limit
+            case "--all":
+                query.limit = nil
+            case "--format":
+                let value = try parser.value(after: arg)
+                guard let format = OutputFormat(rawValue: value) else {
+                    throw CLIError.usage("Unsupported format: \(value)")
+                }
+                query.format = format
+            default:
+                throw CLIError.usage("Unexpected argument for projects: \(arg)")
+            }
+        }
+
+        return query
+    }
+
+    private static func parseUpdateProjectReview(_ args: [String]) throws -> UpdateProjectReview {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-review requires a project name\n\n\(help)")
+        }
+
+        var markReviewed = false
+        var interval: String??
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--mark-reviewed":
+                markReviewed = true
+            case "--interval":
+                interval = .some(try nullableValue(after: arg, parser: &parser))
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-review: \(arg)")
+            }
+        }
+
+        return UpdateProjectReview(project: project, markReviewed: markReviewed, interval: interval, dryRun: dryRun)
+    }
+
+    private static func parseDeleteTasks(_ args: [String]) throws -> DeleteTasks {
+        var parser = OptionParser(args)
+        var ids: [String] = []
+
+        while let arg = parser.peek(), !arg.hasPrefix("--") {
+            _ = parser.next()
+            ids.append(arg)
+        }
+
+        guard !ids.isEmpty else {
+            throw CLIError.usage("task-delete requires at least one task id\n\n\(help)")
+        }
+
+        var dryRun = false
+        while let arg = parser.next() {
+            switch arg {
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for task-delete: \(arg)")
+            }
+        }
+
+        return DeleteTasks(ids: ids, dryRun: dryRun)
+    }
+
+    private static func parseDeleteProject(_ args: [String]) throws -> DeleteProject {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-delete requires a project name\n\n\(help)")
+        }
+
+        var dryRun = false
+        while let arg = parser.next() {
+            switch arg {
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-delete: \(arg)")
+            }
+        }
+
+        return DeleteProject(project: project, dryRun: dryRun)
+    }
+
+    private static func parseCreateTag(_ args: [String]) throws -> CreateTag {
+        var parser = OptionParser(args)
+        guard let name = parser.next(), !name.hasPrefix("--") else {
+            throw CLIError.usage("tag-create requires a tag name\n\n\(help)")
+        }
+
+        var parent: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--parent":
+                parent = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-create: \(arg)")
+            }
+        }
+
+        return CreateTag(name: name, parent: parent, dryRun: dryRun)
+    }
+
+    private static func parseRenameTag(_ args: [String]) throws -> RenameTag {
+        var parser = OptionParser(args)
+        guard let tag = parser.next(), !tag.hasPrefix("--") else {
+            throw CLIError.usage("tag-rename requires a tag path\n\n\(help)")
+        }
+
+        var newName: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--to":
+                newName = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-rename: \(arg)")
+            }
+        }
+
+        guard let newName else {
+            throw CLIError.usage("tag-rename requires --to NEW_NAME")
+        }
+
+        return RenameTag(tag: tag, newName: newName, dryRun: dryRun)
+    }
+
+    private static func parseDeleteTag(_ args: [String]) throws -> DeleteTag {
+        var parser = OptionParser(args)
+        guard let tag = parser.next(), !tag.hasPrefix("--") else {
+            throw CLIError.usage("tag-delete requires a tag path\n\n\(help)")
+        }
+
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-delete: \(arg)")
+            }
+        }
+
+        return DeleteTag(tag: tag, dryRun: dryRun)
+    }
+
+    private static func parseMoveTag(_ args: [String]) throws -> MoveTag {
+        var parser = OptionParser(args)
+        guard let tag = parser.next(), !tag.hasPrefix("--") else {
+            throw CLIError.usage("tag-move requires a tag path\n\n\(help)")
+        }
+
+        var newParent: String??
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--to-parent":
+                newParent = .some(try nullableValue(after: arg, parser: &parser))
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-move: \(arg)")
+            }
+        }
+
+        guard let newParent else {
+            throw CLIError.usage("tag-move requires --to-parent TAG_PATH|none")
+        }
+
+        return MoveTag(tag: tag, newParent: newParent, dryRun: dryRun)
+    }
+
+    private static func parseCreateFolder(_ args: [String]) throws -> CreateFolder {
+        var parser = OptionParser(args)
+        guard let name = parser.next(), !name.hasPrefix("--") else {
+            throw CLIError.usage("folder-create requires a folder name\n\n\(help)")
+        }
+
+        var parent: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--parent":
+                parent = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for folder-create: \(arg)")
+            }
+        }
+
+        return CreateFolder(name: name, parent: parent, dryRun: dryRun)
+    }
+
     private static func nullableValue(after option: String, parser: inout OptionParser) throws -> String? {
         let value = try parser.value(after: option)
         return value == "none" ? nil : value
@@ -646,6 +986,11 @@ private struct OptionParser {
 
     init(_ args: [String]) {
         self.args = args
+    }
+
+    func peek() -> String? {
+        guard index < args.count else { return nil }
+        return args[index]
     }
 
     mutating func next() -> String? {

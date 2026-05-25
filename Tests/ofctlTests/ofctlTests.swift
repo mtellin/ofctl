@@ -358,7 +358,7 @@ import Testing
 @Test func parsesUpdateTaskWithFlag() throws {
     let flagged = try CLI.parse(["ofctl", "update", "abc123", "--flag"])
     #expect(flagged == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -383,7 +383,7 @@ import Testing
 
     let unflagged = try CLI.parse(["ofctl", "update", "abc123", "--no-flag"])
     #expect(unflagged == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -422,7 +422,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: ["Taylor Morgan"],
@@ -452,7 +452,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -490,7 +490,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: .some(nil),
         addTags: ["Taylor Morgan"],
@@ -521,7 +521,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "group123",
+        ids: ["group123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -552,7 +552,7 @@ import Testing
     ])
 
     #expect(dropped == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -577,6 +577,38 @@ import Testing
     #expect(throws: CLIError.self) {
         try CLI.parse(["ofctl", "update", "abc123", "--skip", "--drop"])
     }
+}
+
+@Test func parsesUpdateTaskWithMultipleIDs() throws {
+    let options = try CLI.parse([
+        "ofctl", "update", "id1", "id2", "id3",
+        "--flag",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .update(UpdateTask(
+        ids: ["id1", "id2", "id3"],
+        name: nil,
+        project: nil,
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        flagged: true,
+        dryRun: true
+    ))))
 }
 
 @Test func parsesProjectStatusUpdate() throws {
@@ -652,6 +684,252 @@ import Testing
     ))))
 }
 
+@Test func parsesTagsQuery() throws {
+    let json = try CLI.parse(["ofctl", "tags"])
+    #expect(json == CommandLineOptions(command: .tags(TagsQuery(format: .json))))
+
+    let text = try CLI.parse(["ofctl", "tags", "--format", "text"])
+    #expect(text == CommandLineOptions(command: .tags(TagsQuery(format: .text))))
+}
+
+@Test func parsesTagCreate() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-create", "Errands",
+        "--parent", "Status",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagCreate(CreateTag(
+        name: "Errands",
+        parent: "Status",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagCreateTopLevel() throws {
+    let options = try CLI.parse(["ofctl", "tag-create", "Contexts"])
+    #expect(options == CommandLineOptions(command: .tagCreate(CreateTag(
+        name: "Contexts",
+        parent: nil,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTagRename() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-rename", "Status/Errands",
+        "--to", "Out & About",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagRename(RenameTag(
+        tag: "Status/Errands",
+        newName: "Out & About",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagRenameRequiresToFlag() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "tag-rename", "Errands"])
+    }
+}
+
+@Test func parsesTagDelete() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-delete", "Status/Errands",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagDelete(DeleteTag(
+        tag: "Status/Errands",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagMove() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-move", "Errands",
+        "--to-parent", "Status",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagMove(MoveTag(
+        tag: "Errands",
+        newParent: "Status",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagMoveToTopLevel() throws {
+    let options = try CLI.parse(["ofctl", "tag-move", "Status/Errands", "--to-parent", "none"])
+    #expect(options == CommandLineOptions(command: .tagMove(MoveTag(
+        tag: "Status/Errands",
+        newParent: nil,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTagMoveRequiresToParent() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "tag-move", "Errands"])
+    }
+}
+
+@Test func parsesProjectsQuery() throws {
+    let defaults = try CLI.parse(["ofctl", "projects"])
+    #expect(defaults == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: nil,
+        status: nil,
+        dueForReview: false,
+        limit: 100,
+        format: .json
+    ))))
+
+    let filtered = try CLI.parse([
+        "ofctl", "projects",
+        "--folder", "Work",
+        "--status", "active",
+        "--due-for-review",
+        "--limit", "10",
+        "--format", "text",
+    ])
+    #expect(filtered == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: "Work",
+        status: .active,
+        dueForReview: true,
+        limit: 10,
+        format: .text
+    ))))
+}
+
+@Test func parsesProjectsQueryAll() throws {
+    let options = try CLI.parse(["ofctl", "projects", "--all"])
+    #expect(options == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: nil,
+        status: nil,
+        dueForReview: false,
+        limit: nil,
+        format: .json
+    ))))
+}
+
+@Test func parsesProjectReview() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-review", "Home Maintenance",
+        "--mark-reviewed",
+        "--interval", "1w",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .projectReview(UpdateProjectReview(
+        project: "Home Maintenance",
+        markReviewed: true,
+        interval: .some("1w"),
+        dryRun: true
+    ))))
+}
+
+@Test func parsesProjectReviewClearInterval() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-review", "Home Maintenance",
+        "--interval", "none",
+    ])
+    #expect(options == CommandLineOptions(command: .projectReview(UpdateProjectReview(
+        project: "Home Maintenance",
+        markReviewed: false,
+        interval: .some(nil),
+        dryRun: false
+    ))))
+}
+
+@Test func workPrivacyScopeGuardsProjectsAndReview() throws {
+    let projectsScript = try OmniJavaScript.projectsQuery(
+        ProjectsQuery(folder: nil, status: nil, dueForReview: false, limit: 100, format: .json),
+        privacyScope: .work
+    )
+    #expect(projectsScript.contains("projectAllowedByPrivacyScope(project)"))
+    #expect(projectsScript.contains("privacyScope"))
+
+    let reviewScript = try OmniJavaScript.updateProjectReview(
+        UpdateProjectReview(project: "Work Notifications", markReviewed: true, interval: nil, dryRun: false),
+        privacyScope: .work
+    )
+    #expect(reviewScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    #expect(reviewScript.contains("project.markReviewed()"))
+}
+
+@Test func parsesTaskDelete() throws {
+    let single = try CLI.parse(["ofctl", "task-delete", "abc123"])
+    #expect(single == CommandLineOptions(command: .taskDelete(DeleteTasks(ids: ["abc123"], dryRun: false))))
+
+    let multi = try CLI.parse([
+        "ofctl", "task-delete", "abc123", "def456", "ghi789", "--dry-run",
+    ])
+    #expect(multi == CommandLineOptions(command: .taskDelete(DeleteTasks(
+        ids: ["abc123", "def456", "ghi789"],
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTaskDeleteRequiresId() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-delete"])
+    }
+}
+
+@Test func parsesProjectDelete() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-delete", "Home Maintenance",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .projectDelete(DeleteProject(
+        project: "Home Maintenance",
+        dryRun: true
+    ))))
+}
+
+@Test func workPrivacyScopeGuardsDeletes() throws {
+    let taskScript = try OmniJavaScript.deleteTasks(
+        DeleteTasks(ids: ["abc123"], dryRun: false),
+        privacyScope: .work
+    )
+    #expect(taskScript.contains("taskAllowedByPrivacyScope"))
+    #expect(taskScript.contains("Task not available in current privacy scope"))
+
+    let projectScript = try OmniJavaScript.deleteProject(
+        DeleteProject(project: "Home Maintenance", dryRun: false),
+        privacyScope: .work
+    )
+    #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    #expect(projectScript.contains("Project not available in current privacy scope"))
+}
+
+@Test func parsesFolderCreate() throws {
+    let options = try CLI.parse([
+        "ofctl", "folder-create", "Home Maintenance",
+        "--parent", "Personal",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .folderCreate(CreateFolder(
+        name: "Home Maintenance",
+        parent: "Personal",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesFolderCreateTopLevel() throws {
+    let options = try CLI.parse(["ofctl", "folder-create", "Work Projects"])
+
+    #expect(options == CommandLineOptions(command: .folderCreate(CreateFolder(
+        name: "Work Projects",
+        parent: nil,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesFolderCreateRequiresName() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "folder-create"])
+    }
+}
+
 @Test func workPrivacyScopeActivatesFromEnvironmentHostnames() {
     #expect(PrivacyScope.fromEnvironment(
         ["OFCTL_WORK_HOSTNAMES": "office-mbp, other-host"],
@@ -695,7 +973,7 @@ import Testing
 
     #expect(addScript.contains("assertAddDestinationAvailable(dryRunProject, parentTask);"))
     #expect(addScript.contains("assertTaskAvailableInPrivacyScope(parentTask"))
-    #expect(updateScript.contains("!task || !taskAllowedByPrivacyScope(task)"))
+    #expect(updateScript.contains("!t || !taskAllowedByPrivacyScope(t)"))
     #expect(updateScript.contains("!dryRunProject.project || !projectAllowedByPrivacyScope(dryRunProject.project)"))
     #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
 
@@ -705,6 +983,13 @@ import Testing
     )
     #expect(moveScript.contains("assertProjectAvailableInPrivacyScope(project"))
     #expect(moveScript.contains("folderAllowedByPrivacyScope(folder)"))
+
+    let createFolderScript = try OmniJavaScript.createFolder(
+        CreateFolder(name: "Work Projects", parent: "Work", dryRun: false),
+        privacyScope: .work
+    )
+    #expect(createFolderScript.contains("folderAllowedByPrivacyScope(parentFolder)"))
+    #expect(createFolderScript.contains("Creating a folder at the top level is not allowed in the current privacy scope"))
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {
@@ -726,7 +1011,7 @@ import Testing
         dryRun: false
     ))
     let updateScript = try OmniJavaScript.updateTask(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -817,7 +1102,7 @@ private func defaultAddTask() -> AddTask {
 
 private func defaultUpdateTask() -> UpdateTask {
     UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: .some("Product Launch"),
         addTags: [],

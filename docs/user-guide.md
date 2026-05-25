@@ -644,6 +644,16 @@ Dry-run:
 ofctl update TASK_ID --planned none --dry-run
 ```
 
+Apply the same change to multiple tasks at once:
+
+```sh
+ofctl update ID1 ID2 ID3 --add-tag "Waiting On" --dry-run
+ofctl update ID1 ID2 ID3 --complete --dry-run
+```
+
+The response contains a `tasks` array with one entry per ID. All mutations apply
+to every task — use `--dry-run` first when touching more than one task.
+
 ## Creating Projects
 
 ### Regular project
@@ -723,6 +733,252 @@ Use `--dry-run` to preview without mutating:
 ```sh
 ofctl project-move "Home Maintenance" --to-folder Home --dry-run
 ```
+
+## projects
+
+Lists projects with optional filtering. Each project in the JSON result includes
+`id`, `name`, `folder` (array), `status`, `singleton`, `sequential`,
+`completedByChildren`, `reviewInterval` (`{steps, unit}` or null),
+`nextReviewDate`, and `lastReviewDate`.
+
+```sh
+ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
+```
+
+List all projects:
+
+```sh
+ofctl projects --format text
+```
+
+Projects in a specific folder:
+
+```sh
+ofctl projects --folder Work --format text
+```
+
+Only active projects:
+
+```sh
+ofctl projects --status active --format text
+```
+
+Projects due for review (nextReviewDate ≤ now):
+
+```sh
+ofctl projects --due-for-review --format text
+```
+
+## project-review
+
+Sets a project's review interval and/or marks it as reviewed.
+
+```sh
+ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
+```
+
+Interval spec format: `<N><unit>` where unit is `d` (days), `w` (weeks),
+`m` (months), or `y` (years). Example: `1w`, `2m`, `90d`, `1y`.
+
+Set a weekly review interval:
+
+```sh
+ofctl project-review "Work Notifications" --interval 1w
+```
+
+Mark a project as reviewed:
+
+```sh
+ofctl project-review "Home Maintenance" --mark-reviewed
+```
+
+Set interval and mark reviewed together:
+
+```sh
+ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w --dry-run
+ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w
+```
+
+Clear the review interval:
+
+```sh
+ofctl project-review "Home Maintenance" --interval none
+```
+
+> **API note:** `--mark-reviewed` calls `project.markReviewed()` in OmniJS,
+> which advances `nextReviewDate` by the review interval. If the project has no
+> review interval set, setting one first is recommended.
+
+## task-delete
+
+Deletes one or more tasks by OmniFocus ID. All IDs are validated first; if any
+ID is not found or is outside the current privacy scope, the entire operation
+fails and nothing is deleted.
+
+```sh
+ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
+```
+
+Delete a single task:
+
+```sh
+ofctl task-delete TASK_ID --dry-run
+ofctl task-delete TASK_ID
+```
+
+Delete several tasks at once:
+
+```sh
+ofctl task-delete ID1 ID2 ID3 --dry-run
+ofctl task-delete ID1 ID2 ID3
+```
+
+The response includes an array of `{id, name, deleted}` objects.
+
+## project-delete
+
+Deletes a project by name.
+
+```sh
+ofctl project-delete PROJECT_NAME [--dry-run]
+```
+
+```sh
+ofctl project-delete "Home Maintenance" --dry-run
+ofctl project-delete "Home Maintenance"
+```
+
+The response includes `project.id`, `project.name`, and `project.folder` (the
+folder path array). Always dry-run first to confirm the correct project is
+targeted.
+
+## tags
+
+Lists all tags with their full path, parent, and child count.
+
+```sh
+ofctl tags [--format json|text]
+```
+
+```sh
+ofctl tags --format text
+```
+
+Each JSON entry includes `id`, `name`, `path` (slash-delimited full path), `parent`,
+`parentPath`, and `childCount`.
+
+Tags are not folder-scoped — all tags are visible regardless of privacy scope.
+
+## tag-create
+
+Creates a new tag, optionally under an existing parent tag.
+
+```sh
+ofctl tag-create NAME [--parent TAG_PATH] [--dry-run]
+```
+
+Create a top-level tag:
+
+```sh
+ofctl tag-create "Contexts"
+```
+
+Create a child tag (parent resolved by name or slash-delimited path):
+
+```sh
+ofctl tag-create "Errands" --parent "Contexts"
+ofctl tag-create "Home" --parent "Contexts/Errands"
+```
+
+Errors if a tag with that name already exists at the target path.
+
+## tag-rename
+
+Renames an existing tag.
+
+```sh
+ofctl tag-rename TAG_PATH --to NEW_NAME [--dry-run]
+```
+
+```sh
+ofctl tag-rename "Contexts/Errands" --to "Out & About"
+ofctl tag-rename "Old Label" --to "New Label" --dry-run
+```
+
+The tag path uses the tag name at each level separated by `/`. Only the leaf name
+is changed; the tag remains in its current location in the hierarchy.
+
+## tag-delete
+
+Deletes a tag. The response includes `childCount` and `taskCount` (all descendant
+tasks carrying this tag) so you can see the blast radius before committing.
+
+```sh
+ofctl tag-delete TAG_PATH [--dry-run]
+```
+
+```sh
+ofctl tag-delete "Status/Deprecated" --dry-run
+ofctl tag-delete "Status/Deprecated"
+```
+
+Deleting a parent tag also removes all child tags.
+
+## tag-move
+
+Reparents a tag under a different tag, or moves it to the top level.
+
+```sh
+ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
+```
+
+Move to a different parent:
+
+```sh
+ofctl tag-move "Errands" --to-parent "Contexts"
+```
+
+Move to the top level:
+
+```sh
+ofctl tag-move "Contexts/Errands" --to-parent none
+```
+
+Use `--dry-run` to preview without mutating:
+
+```sh
+ofctl tag-move "Errands" --to-parent "Contexts" --dry-run
+```
+
+## folder-create
+
+Creates a new OmniFocus folder, optionally nested inside an existing parent.
+
+```sh
+ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
+```
+
+Create a top-level folder:
+
+```sh
+ofctl folder-create "Home Maintenance"
+```
+
+Create a nested folder (parent resolved by name or slash-delimited path):
+
+```sh
+ofctl folder-create "Garden" --parent "Home Maintenance"
+ofctl folder-create "Sprints" --parent "Work/Q3 Planning"
+```
+
+Use `--dry-run` to preview without mutating:
+
+```sh
+ofctl folder-create "Work Projects" --dry-run
+```
+
+The returned JSON includes `folder.id`, `folder.name`, and `folder.path` (the
+full path as an array of folder names from root to the new folder).
 
 ## Common Queries
 

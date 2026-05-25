@@ -76,6 +76,46 @@ public struct OmniFocusClient {
     public func createProject(_ create: CreateProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.createProject(create, privacyScope: privacyScope))
     }
+
+    public func createFolder(_ create: CreateFolder) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.createFolder(create, privacyScope: privacyScope))
+    }
+
+    public func tags(_ query: TagsQuery) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.tagsQuery())
+    }
+
+    public func createTag(_ create: CreateTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.createTag(create))
+    }
+
+    public func renameTag(_ rename: RenameTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.renameTag(rename))
+    }
+
+    public func deleteTag(_ delete: DeleteTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.deleteTag(delete))
+    }
+
+    public func moveTag(_ move: MoveTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.moveTag(move))
+    }
+
+    public func projects(_ query: ProjectsQuery) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.projectsQuery(query, privacyScope: privacyScope))
+    }
+
+    public func reviewProject(_ review: UpdateProjectReview) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.updateProjectReview(review, privacyScope: privacyScope))
+    }
+
+    public func deleteTasks(_ delete: DeleteTasks) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.deleteTasks(delete, privacyScope: privacyScope))
+    }
+
+    public func deleteProject(_ delete: DeleteProject) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.deleteProject(delete, privacyScope: privacyScope))
+    }
 }
 
 enum OmniJavaScript {
@@ -525,7 +565,7 @@ enum OmniJavaScript {
     }
 
     static func updateTask(_ task: UpdateTask, privacyScope: PrivacyScope = .unrestricted) throws -> String {
-        let id = try jsonLiteral(task.id)
+        let ids = try jsonLiteral(task.ids)
         let name = try jsonLiteral(task.name)
         let project = optionalJSONAssignment(task.project)
         let addTags = try jsonLiteral(task.addTags)
@@ -551,7 +591,7 @@ enum OmniJavaScript {
           \(taskSerializationSupport)
 
           const input = {
-            id: \(id),
+            ids: \(ids),
             name: \(name),
             project: \(project),
             addTags: \(addTags),
@@ -631,10 +671,13 @@ enum OmniJavaScript {
             return { project: new Project(name, library.ending), created: true };
           }
 
-          const task = Task.byIdentifier(input.id);
-          if (!task || !taskAllowedByPrivacyScope(task)) {
-            throw new Error(`Task not found or not available in current privacy scope: ${input.id}`);
-          }
+          const resolvedTasks = input.ids.map(id => {
+            const t = Task.byIdentifier(id);
+            if (!t || !taskAllowedByPrivacyScope(t)) {
+              throw new Error(`Task not found or not available in current privacy scope: ${id}`);
+            }
+            return t;
+          });
 
           const dryRunProject = input.project === undefined || input.project === null
             ? { project: null, created: false }
@@ -650,7 +693,7 @@ enum OmniJavaScript {
           if (input.dryRun) {
             return JSON.stringify({
               dryRun: true,
-              task: input,
+              tasks: resolvedTasks.map(t => ({ id: t.id.primaryKey, name: t.name })),
               meta: {
                 privacyScope,
                 projectExists: input.project !== undefined && input.project !== null ? dryRunProject.project !== null : null,
@@ -671,44 +714,41 @@ enum OmniJavaScript {
           }
 
           let projectCreated = false;
-          if (input.name !== null) { task.name = input.name; }
-          if (input.note !== null) { setMarkdownNote(task, input.note); }
           if (input.project !== undefined) {
             const projectResult = input.project === null
               ? { project: null, created: false }
               : projectNamedOrCreated(input.project);
             projectCreated = projectResult.created;
             const insertion = projectResult.project === null ? inbox.ending : projectResult.project.ending;
-            moveTasks([task], insertion);
+            moveTasks(resolvedTasks, insertion);
           }
-          if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
-          if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
-          if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
-          if (input.repeatRule !== undefined) { task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod); }
-          if (input.estimatedMinutes !== undefined) { task.estimatedMinutes = input.estimatedMinutes; }
-          if (input.sequential !== undefined) { task.sequential = input.sequential; }
-          if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
-          if (input.flagged !== undefined) { task.flagged = input.flagged; }
-          if (input.clearTags) { task.clearTags(); }
-          input.removeTags.forEach(name => task.removeTag(existingTagNamed(name)));
-          input.addTags.forEach(name => task.addTag(tagNamedOrCreated(name)));
 
-          let resultTask = task;
-          if (input.incomplete) {
-            task.markIncomplete();
-          }
-          if (input.complete) {
-            resultTask = task.markComplete(parseDate(input.completedAt));
-          }
-          if (input.drop) {
-            task.drop(input.dropAllOccurrences);
-          }
-          if (input.skip) {
-            task.drop(false);
-          }
+          const resultTasks = resolvedTasks.map(task => {
+            if (input.name !== null) { task.name = input.name; }
+            if (input.note !== null) { setMarkdownNote(task, input.note); }
+            if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
+            if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
+            if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
+            if (input.repeatRule !== undefined) { task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod); }
+            if (input.estimatedMinutes !== undefined) { task.estimatedMinutes = input.estimatedMinutes; }
+            if (input.sequential !== undefined) { task.sequential = input.sequential; }
+            if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
+            if (input.flagged !== undefined) { task.flagged = input.flagged; }
+            if (input.clearTags) { task.clearTags(); }
+            input.removeTags.forEach(name => task.removeTag(existingTagNamed(name)));
+            input.addTags.forEach(name => task.addTag(tagNamedOrCreated(name)));
+
+            let resultTask = task;
+            if (input.incomplete) { task.markIncomplete(); }
+            if (input.complete) { resultTask = task.markComplete(parseDate(input.completedAt)); }
+            if (input.drop) { task.drop(input.dropAllOccurrences); }
+            if (input.skip) { task.drop(false); }
+
+            return serializeTask(resultTask, false, input.sequential !== undefined || input.completedByChildren !== undefined);
+          });
 
           return JSON.stringify({
-            task: serializeTask(resultTask, false, input.sequential !== undefined || input.completedByChildren !== undefined),
+            tasks: resultTasks,
             meta: {
               privacyScope,
               createdProject: projectCreated
@@ -788,6 +828,7 @@ enum OmniJavaScript {
         (() => {
           \(privacy)
           \(taskSerializationSupport)
+          \(folderSupport)
 
           const input = {
             project: \(project),
@@ -801,35 +842,6 @@ enum OmniJavaScript {
               throw new Error(`Project not found: ${name}`);
             }
             return project;
-          }
-
-          function folderForPath(pathStr) {
-            const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
-            if (segments.length === 0) {
-              throw new Error(`Invalid folder path: ${pathStr}`);
-            }
-            const joined = segments.join("/");
-            // exact full-path match
-            const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
-            if (exactMatches.length === 1) { return exactMatches[0]; }
-            if (exactMatches.length > 1) {
-              throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
-            }
-            // leaf-name fallback (single segment only)
-            if (segments.length === 1) {
-              const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
-              if (leafMatches.length === 1) { return leafMatches[0]; }
-              if (leafMatches.length > 1) {
-                throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
-              }
-            }
-            throw new Error(`Folder not found: ${pathStr}`);
-          }
-
-          function folderAllowedByPrivacyScope(folder) {
-            if (!privacyScope) { return true; }
-            if (!folder) { return false; }
-            return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
           }
 
           const project = projectNamed(input.project);
@@ -873,6 +885,7 @@ enum OmniJavaScript {
         (() => {
           \(privacy)
           \(taskSerializationSupport)
+          \(folderSupport)
 
           const input = {
             name: \(name),
@@ -881,33 +894,6 @@ enum OmniJavaScript {
             onHold: \(create.onHold ? "true" : "false"),
             dryRun: \(create.dryRun ? "true" : "false")
           };
-
-          function folderForPath(pathStr) {
-            const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
-            if (segments.length === 0) {
-              throw new Error(`Invalid folder path: ${pathStr}`);
-            }
-            const joined = segments.join("/");
-            const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
-            if (exactMatches.length === 1) { return exactMatches[0]; }
-            if (exactMatches.length > 1) {
-              throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
-            }
-            if (segments.length === 1) {
-              const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
-              if (leafMatches.length === 1) { return leafMatches[0]; }
-              if (leafMatches.length > 1) {
-                throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
-              }
-            }
-            throw new Error(`Folder not found: ${pathStr}`);
-          }
-
-          function folderAllowedByPrivacyScope(folder) {
-            if (!privacyScope) { return true; }
-            if (!folder) { return false; }
-            return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
-          }
 
           if (input.dryRun) {
             return JSON.stringify({ dryRun: true, project: input, meta: { privacyScope } }, null, 2);
@@ -951,6 +937,423 @@ enum OmniJavaScript {
         """
     }
 
+    static func createFolder(_ create: CreateFolder, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let name = try jsonLiteral(create.name)
+        let parent = try jsonLiteral(create.parent)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+          \(folderSupport)
+
+          const input = {
+            name: \(name),
+            parent: \(parent),
+            dryRun: \(create.dryRun ? "true" : "false")
+          };
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, folder: input, meta: { privacyScope } }, null, 2);
+          }
+
+          let parentFolder = null;
+          if (input.parent !== null) {
+            parentFolder = folderForPath(input.parent);
+            if (!folderAllowedByPrivacyScope(parentFolder)) {
+              throw new Error(`Destination folder not available in current privacy scope: ${input.parent}`);
+            }
+          } else if (privacyScope) {
+            throw new Error(`Creating a folder at the top level is not allowed in the current privacy scope`);
+          }
+
+          const destination = parentFolder ? parentFolder.ending : library.ending;
+          const folder = new Folder(input.name, destination);
+
+          return JSON.stringify({
+            folder: {
+              id: folder.id.primaryKey,
+              name: folder.name,
+              path: folderPath(folder)
+            },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func projectsQuery(_ query: ProjectsQuery, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let folder = try jsonLiteral(query.folder)
+        let status = try jsonLiteral(query.status?.rawValue)
+        let limit = query.limit.map(String.init) ?? "null"
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+          \(projectSerializationSupport)
+
+          const folderFilter = \(folder);
+          const statusFilter = \(status);
+          const dueForReview = \(query.dueForReview ? "true" : "false");
+          const limit = \(limit);
+          const now = new Date();
+
+          const matched = flattenedProjects.filter(project => {
+            if (!projectAllowedByPrivacyScope(project)) { return false; }
+            if (folderFilter && !projectFolderNamesForProject(project).includes(folderFilter)) { return false; }
+            if (statusFilter && projectStatusName(project.status) !== statusFilter) { return false; }
+            if (dueForReview && !(project.nextReviewDate && project.nextReviewDate <= now)) { return false; }
+            return true;
+          });
+
+          const returned = limit === null ? matched : matched.slice(0, limit);
+          const projects = returned.map(p => serializeProject(p));
+
+          return JSON.stringify({
+            projects,
+            meta: {
+              folder: folderFilter,
+              status: statusFilter,
+              dueForReview,
+              privacyScope,
+              total: matched.length,
+              count: projects.length,
+              limit,
+              truncated: limit !== null && matched.length > limit
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func updateProjectReview(_ review: UpdateProjectReview, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(review.project)
+        let interval = optionalJSONAssignment(review.interval)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+          \(projectSerializationSupport)
+
+          const input = {
+            project: \(project),
+            markReviewed: \(review.markReviewed ? "true" : "false"),
+            interval: \(interval),
+            dryRun: \(review.dryRun ? "true" : "false")
+          };
+
+          function parseIntervalSpec(spec) {
+            if (!spec) { return null; }
+            const match = /^(\\d+)([dwmy])$/.exec(spec);
+            if (!match) { throw new Error(`Invalid interval spec "${spec}" — use format like 1w, 2m, 3d, 1y`); }
+            const steps = Number(match[1]);
+            const unitMap = {
+              d: Project.ReviewInterval.Unit.Days,
+              w: Project.ReviewInterval.Unit.Weeks,
+              m: Project.ReviewInterval.Unit.Months,
+              y: Project.ReviewInterval.Unit.Years
+            };
+            return new Project.ReviewInterval(steps, unitMap[match[2]]);
+          }
+
+          const project = flattenedProjects.byName(input.project);
+          if (!project) { throw new Error(`Project not found: ${input.project}`); }
+          assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              project: serializeProject(project),
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          if (input.interval !== undefined) {
+            project.reviewInterval = parseIntervalSpec(input.interval);
+          }
+          if (input.markReviewed) {
+            project.markReviewed();
+          }
+
+          return JSON.stringify({
+            project: serializeProject(project),
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func deleteTasks(_ delete: DeleteTasks, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let ids = try jsonLiteral(delete.ids)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            ids: \(ids),
+            dryRun: \(delete.dryRun ? "true" : "false")
+          };
+
+          const resolved = input.ids.map(id => {
+            const task = Task.byIdentifier(id);
+            if (!task) { throw new Error(`Task not found: ${id}`); }
+            if (!taskAllowedByPrivacyScope(task)) {
+              throw new Error(`Task not available in current privacy scope: ${id}`);
+            }
+            return task;
+          });
+
+          const results = resolved.map(task => {
+            const result = { id: task.id.primaryKey, name: task.name, deleted: !input.dryRun };
+            if (!input.dryRun) { deleteObject(task); }
+            return result;
+          });
+
+          return JSON.stringify({ tasks: results, dryRun: input.dryRun, meta: { privacyScope } }, null, 2);
+        })();
+        """
+    }
+
+    static func deleteProject(_ delete: DeleteProject, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(delete.project)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            project: \(project),
+            dryRun: \(delete.dryRun ? "true" : "false")
+          };
+
+          const project = flattenedProjects.byName(input.project);
+          if (!project) { throw new Error(`Project not found: ${input.project}`); }
+          assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
+
+          const projectInfo = {
+            id: project.id.primaryKey,
+            name: project.name,
+            folder: projectFolderNamesForProject(project)
+          };
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, project: projectInfo, meta: { privacyScope } }, null, 2);
+          }
+
+          deleteObject(project);
+          return JSON.stringify({ deleted: true, project: projectInfo, meta: { privacyScope } }, null, 2);
+        })();
+        """
+    }
+
+    static func tagsQuery() -> String {
+        """
+        (() => {
+          \(taskSerializationSupport)
+
+          const tagList = flattenedTags.map(tag => ({
+            id: tag.id.primaryKey,
+            name: tag.name,
+            path: tagPath(tag),
+            parent: tag.parent ? tag.parent.name : null,
+            parentPath: tag.parent ? tagPath(tag.parent) : null,
+            childCount: tag.tags.length
+          }));
+
+          return JSON.stringify({
+            tags: tagList,
+            meta: { count: tagList.length }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func createTag(_ create: CreateTag) throws -> String {
+        let name = try jsonLiteral(create.name)
+        let parent = try jsonLiteral(create.parent)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            name: \(name),
+            parent: \(parent),
+            dryRun: \(create.dryRun ? "true" : "false")
+          };
+
+          let parentTag = null;
+          if (input.parent !== null) {
+            const parts = tagPathParts(input.parent);
+            parentTag = tagNamedByPath(parts);
+            if (!parentTag) {
+              throw new Error(`Parent tag not found: ${input.parent}`);
+            }
+          }
+
+          const targetPath = parentTag ? tagPath(parentTag) + "/" + input.name : input.name;
+          const existing = parentTag ? childTagNamed(parentTag, input.name) : rootTagNamed(input.name);
+          if (existing) {
+            throw new Error(`Tag already exists: ${targetPath}`);
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, tag: input, meta: { targetPath } }, null, 2);
+          }
+
+          const newTag = parentTag ? new Tag(input.name, parentTag.ending) : new Tag(input.name);
+
+          return JSON.stringify({
+            tag: {
+              id: newTag.id.primaryKey,
+              name: newTag.name,
+              path: tagPath(newTag)
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func renameTag(_ rename: RenameTag) throws -> String {
+        let tag = try jsonLiteral(rename.tag)
+        let newName = try jsonLiteral(rename.newName)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            tag: \(tag),
+            newName: \(newName),
+            dryRun: \(rename.dryRun ? "true" : "false")
+          };
+
+          const parts = tagPathParts(input.tag);
+          const tag = tagNamedByPath(parts);
+          if (!tag) {
+            throw new Error(`Tag not found: ${input.tag}`);
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, tag: input, meta: { from: tagPath(tag) } }, null, 2);
+          }
+
+          const oldPath = tagPath(tag);
+          tag.name = input.newName;
+
+          return JSON.stringify({
+            tag: {
+              id: tag.id.primaryKey,
+              name: tag.name,
+              path: tagPath(tag),
+              renamedFrom: oldPath
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func deleteTag(_ delete: DeleteTag) throws -> String {
+        let tag = try jsonLiteral(delete.tag)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            tag: \(tag),
+            dryRun: \(delete.dryRun ? "true" : "false")
+          };
+
+          const parts = tagPathParts(input.tag);
+          const tag = tagNamedByPath(parts);
+          if (!tag) {
+            throw new Error(`Tag not found: ${input.tag}`);
+          }
+
+          const tagInfo = {
+            id: tag.id.primaryKey,
+            name: tag.name,
+            path: tagPath(tag),
+            childCount: tag.tags.length,
+            taskCount: tag.flattenedTasks.length
+          };
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, tag: tagInfo }, null, 2);
+          }
+
+          deleteObject(tag);
+
+          return JSON.stringify({ deleted: true, tag: tagInfo }, null, 2);
+        })();
+        """
+    }
+
+    static func moveTag(_ move: MoveTag) throws -> String {
+        let tag = try jsonLiteral(move.tag)
+        let newParent = try jsonLiteral(move.newParent)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            tag: \(tag),
+            newParent: \(newParent),
+            dryRun: \(move.dryRun ? "true" : "false")
+          };
+
+          const tagParts = tagPathParts(input.tag);
+          const tag = tagNamedByPath(tagParts);
+          if (!tag) {
+            throw new Error(`Tag not found: ${input.tag}`);
+          }
+
+          let newParentTag = null;
+          if (input.newParent !== null) {
+            const parentParts = tagPathParts(input.newParent);
+            newParentTag = tagNamedByPath(parentParts);
+            if (!newParentTag) {
+              throw new Error(`Destination tag not found: ${input.newParent}`);
+            }
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              tag: input,
+              meta: {
+                from: tagPath(tag),
+                to: newParentTag ? tagPath(newParentTag) : null
+              }
+            }, null, 2);
+          }
+
+          const destination = newParentTag ? newParentTag.ending : tags.ending;
+          moveTags([tag], destination);
+
+          return JSON.stringify({
+            tag: {
+              id: tag.id.primaryKey,
+              name: tag.name,
+              path: tagPath(tag)
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
     private static func jsonLiteral<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
         let data = try encoder.encode(value)
@@ -984,6 +1387,69 @@ enum OmniJavaScript {
         """
     }
 }
+
+private let projectSerializationSupport = #"""
+function projectStatusName(status) {
+  if (status === Project.Status.Active) { return "active"; }
+  if (status === Project.Status.OnHold) { return "on-hold"; }
+  if (status === Project.Status.Done) { return "completed"; }
+  if (status === Project.Status.Dropped) { return "dropped"; }
+  return String(status);
+}
+
+function reviewIntervalUnitName(unit) {
+  if (unit === Project.ReviewInterval.Unit.Days) { return "days"; }
+  if (unit === Project.ReviewInterval.Unit.Weeks) { return "weeks"; }
+  if (unit === Project.ReviewInterval.Unit.Months) { return "months"; }
+  if (unit === Project.ReviewInterval.Unit.Years) { return "years"; }
+  return String(unit);
+}
+
+function serializeProject(project) {
+  const ri = project.reviewInterval;
+  return {
+    id: project.id.primaryKey,
+    name: project.name,
+    folder: projectFolderNamesForProject(project),
+    status: projectStatusName(project.status),
+    singleton: project.containsSingletonActions,
+    sequential: project.sequential,
+    completedByChildren: project.completedByChildren,
+    reviewInterval: ri ? { steps: ri.steps, unit: reviewIntervalUnitName(ri.unit) } : null,
+    nextReviewDate: iso(project.nextReviewDate),
+    lastReviewDate: iso(project.lastReviewDate)
+  };
+}
+"""#
+
+private let folderSupport = #"""
+function folderForPath(pathStr) {
+  const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
+  if (segments.length === 0) {
+    throw new Error(`Invalid folder path: ${pathStr}`);
+  }
+  const joined = segments.join("/");
+  const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
+  if (exactMatches.length === 1) { return exactMatches[0]; }
+  if (exactMatches.length > 1) {
+    throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
+  }
+  if (segments.length === 1) {
+    const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
+    if (leafMatches.length === 1) { return leafMatches[0]; }
+    if (leafMatches.length > 1) {
+      throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
+    }
+  }
+  throw new Error(`Folder not found: ${pathStr}`);
+}
+
+function folderAllowedByPrivacyScope(folder) {
+  if (!privacyScope) { return true; }
+  if (!folder) { return false; }
+  return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
+}
+"""#
 
 private let markdownNoteSupport = #"""
 function escapeMarkdownText(value) {
