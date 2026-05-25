@@ -30,6 +30,8 @@ The command surface is intentionally narrow:
 - `project-status` for controlled project state changes
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
+- `tags` to list all tags with paths (not folder-scoped; always returns all tags)
+- `tag-create`, `tag-rename`, `tag-delete`, `tag-move` for tag management; always use `--dry-run` before `tag-delete` to confirm the blast radius
 
 This is easier to review and approve than general-purpose application
 automation or a full OmniFocus MCP server.

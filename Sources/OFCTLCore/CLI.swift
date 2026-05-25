@@ -26,6 +26,11 @@ public struct CommandLineOptions: Equatable {
         case projectMove(MoveProject)
         case projectCreate(CreateProject)
         case folderCreate(CreateFolder)
+        case tags(TagsQuery)
+        case tagCreate(CreateTag)
+        case tagRename(RenameTag)
+        case tagDelete(DeleteTag)
+        case tagMove(MoveTag)
     }
 
     public var command: Command
@@ -129,6 +134,33 @@ public struct CreateFolder: Equatable {
     public var dryRun: Bool
 }
 
+public struct TagsQuery: Equatable {
+    public var format: OutputFormat
+}
+
+public struct CreateTag: Equatable {
+    public var name: String
+    public var parent: String?
+    public var dryRun: Bool
+}
+
+public struct RenameTag: Equatable {
+    public var tag: String
+    public var newName: String
+    public var dryRun: Bool
+}
+
+public struct DeleteTag: Equatable {
+    public var tag: String
+    public var dryRun: Bool
+}
+
+public struct MoveTag: Equatable {
+    public var tag: String
+    public var newParent: String?
+    public var dryRun: Bool
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -167,6 +199,11 @@ public enum CLI {
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
       ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
+      ofctl tags [--format json|text]
+      ofctl tag-create NAME [--parent TAG_PATH] [--dry-run]
+      ofctl tag-rename TAG_PATH --to NEW_NAME [--dry-run]
+      ofctl tag-delete TAG_PATH [--dry-run]
+      ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -207,6 +244,16 @@ public enum CLI {
             return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
         case "folder-create":
             return try CommandLineOptions(command: .folderCreate(parseCreateFolder(args)))
+        case "tags":
+            return CommandLineOptions(command: .tags(TagsQuery(format: try parseFormatOnly(args, command: "tags"))))
+        case "tag-create":
+            return try CommandLineOptions(command: .tagCreate(parseCreateTag(args)))
+        case "tag-rename":
+            return try CommandLineOptions(command: .tagRename(parseRenameTag(args)))
+        case "tag-delete":
+            return try CommandLineOptions(command: .tagDelete(parseDeleteTag(args)))
+        case "tag-move":
+            return try CommandLineOptions(command: .tagMove(parseMoveTag(args)))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -634,6 +681,103 @@ public enum CLI {
         }
 
         return CreateProject(name: name, folder: folder, singleton: singleton, onHold: onHold, dryRun: dryRun)
+    }
+
+    private static func parseCreateTag(_ args: [String]) throws -> CreateTag {
+        var parser = OptionParser(args)
+        guard let name = parser.next(), !name.hasPrefix("--") else {
+            throw CLIError.usage("tag-create requires a tag name\n\n\(help)")
+        }
+
+        var parent: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--parent":
+                parent = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-create: \(arg)")
+            }
+        }
+
+        return CreateTag(name: name, parent: parent, dryRun: dryRun)
+    }
+
+    private static func parseRenameTag(_ args: [String]) throws -> RenameTag {
+        var parser = OptionParser(args)
+        guard let tag = parser.next(), !tag.hasPrefix("--") else {
+            throw CLIError.usage("tag-rename requires a tag path\n\n\(help)")
+        }
+
+        var newName: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--to":
+                newName = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-rename: \(arg)")
+            }
+        }
+
+        guard let newName else {
+            throw CLIError.usage("tag-rename requires --to NEW_NAME")
+        }
+
+        return RenameTag(tag: tag, newName: newName, dryRun: dryRun)
+    }
+
+    private static func parseDeleteTag(_ args: [String]) throws -> DeleteTag {
+        var parser = OptionParser(args)
+        guard let tag = parser.next(), !tag.hasPrefix("--") else {
+            throw CLIError.usage("tag-delete requires a tag path\n\n\(help)")
+        }
+
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-delete: \(arg)")
+            }
+        }
+
+        return DeleteTag(tag: tag, dryRun: dryRun)
+    }
+
+    private static func parseMoveTag(_ args: [String]) throws -> MoveTag {
+        var parser = OptionParser(args)
+        guard let tag = parser.next(), !tag.hasPrefix("--") else {
+            throw CLIError.usage("tag-move requires a tag path\n\n\(help)")
+        }
+
+        var newParent: String??
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--to-parent":
+                newParent = .some(try nullableValue(after: arg, parser: &parser))
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for tag-move: \(arg)")
+            }
+        }
+
+        guard let newParent else {
+            throw CLIError.usage("tag-move requires --to-parent TAG_PATH|none")
+        }
+
+        return MoveTag(tag: tag, newParent: newParent, dryRun: dryRun)
     }
 
     private static func parseCreateFolder(_ args: [String]) throws -> CreateFolder {

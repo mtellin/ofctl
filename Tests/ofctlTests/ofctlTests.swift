@@ -652,6 +652,94 @@ import Testing
     ))))
 }
 
+@Test func parsesTagsQuery() throws {
+    let json = try CLI.parse(["ofctl", "tags"])
+    #expect(json == CommandLineOptions(command: .tags(TagsQuery(format: .json))))
+
+    let text = try CLI.parse(["ofctl", "tags", "--format", "text"])
+    #expect(text == CommandLineOptions(command: .tags(TagsQuery(format: .text))))
+}
+
+@Test func parsesTagCreate() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-create", "Errands",
+        "--parent", "Status",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagCreate(CreateTag(
+        name: "Errands",
+        parent: "Status",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagCreateTopLevel() throws {
+    let options = try CLI.parse(["ofctl", "tag-create", "Contexts"])
+    #expect(options == CommandLineOptions(command: .tagCreate(CreateTag(
+        name: "Contexts",
+        parent: nil,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTagRename() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-rename", "Status/Errands",
+        "--to", "Out & About",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagRename(RenameTag(
+        tag: "Status/Errands",
+        newName: "Out & About",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagRenameRequiresToFlag() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "tag-rename", "Errands"])
+    }
+}
+
+@Test func parsesTagDelete() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-delete", "Status/Errands",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagDelete(DeleteTag(
+        tag: "Status/Errands",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagMove() throws {
+    let options = try CLI.parse([
+        "ofctl", "tag-move", "Errands",
+        "--to-parent", "Status",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .tagMove(MoveTag(
+        tag: "Errands",
+        newParent: "Status",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTagMoveToTopLevel() throws {
+    let options = try CLI.parse(["ofctl", "tag-move", "Status/Errands", "--to-parent", "none"])
+    #expect(options == CommandLineOptions(command: .tagMove(MoveTag(
+        tag: "Status/Errands",
+        newParent: nil,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTagMoveRequiresToParent() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "tag-move", "Errands"])
+    }
+}
+
 @Test func parsesFolderCreate() throws {
     let options = try CLI.parse([
         "ofctl", "folder-create", "Home Maintenance",

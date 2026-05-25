@@ -80,6 +80,26 @@ public struct OmniFocusClient {
     public func createFolder(_ create: CreateFolder) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.createFolder(create, privacyScope: privacyScope))
     }
+
+    public func tags(_ query: TagsQuery) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.tagsQuery())
+    }
+
+    public func createTag(_ create: CreateTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.createTag(create))
+    }
+
+    public func renameTag(_ rename: RenameTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.renameTag(rename))
+    }
+
+    public func deleteTag(_ delete: DeleteTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.deleteTag(delete))
+    }
+
+    public func moveTag(_ move: MoveTag) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.moveTag(move))
+    }
 }
 
 enum OmniJavaScript {
@@ -942,6 +962,204 @@ enum OmniJavaScript {
               path: folderPath(folder)
             },
             meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func tagsQuery() -> String {
+        """
+        (() => {
+          \(taskSerializationSupport)
+
+          const tagList = flattenedTags.map(tag => ({
+            id: tag.id.primaryKey,
+            name: tag.name,
+            path: tagPath(tag),
+            parent: tag.parent ? tag.parent.name : null,
+            parentPath: tag.parent ? tagPath(tag.parent) : null,
+            childCount: tag.tags.length
+          }));
+
+          return JSON.stringify({
+            tags: tagList,
+            meta: { count: tagList.length }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func createTag(_ create: CreateTag) throws -> String {
+        let name = try jsonLiteral(create.name)
+        let parent = try jsonLiteral(create.parent)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            name: \(name),
+            parent: \(parent),
+            dryRun: \(create.dryRun ? "true" : "false")
+          };
+
+          let parentTag = null;
+          if (input.parent !== null) {
+            const parts = tagPathParts(input.parent);
+            parentTag = tagNamedByPath(parts);
+            if (!parentTag) {
+              throw new Error(`Parent tag not found: ${input.parent}`);
+            }
+          }
+
+          const targetPath = parentTag ? tagPath(parentTag) + "/" + input.name : input.name;
+          const existing = parentTag ? childTagNamed(parentTag, input.name) : rootTagNamed(input.name);
+          if (existing) {
+            throw new Error(`Tag already exists: ${targetPath}`);
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, tag: input, meta: { targetPath } }, null, 2);
+          }
+
+          const newTag = parentTag ? new Tag(input.name, parentTag.ending) : new Tag(input.name);
+
+          return JSON.stringify({
+            tag: {
+              id: newTag.id.primaryKey,
+              name: newTag.name,
+              path: tagPath(newTag)
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func renameTag(_ rename: RenameTag) throws -> String {
+        let tag = try jsonLiteral(rename.tag)
+        let newName = try jsonLiteral(rename.newName)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            tag: \(tag),
+            newName: \(newName),
+            dryRun: \(rename.dryRun ? "true" : "false")
+          };
+
+          const parts = tagPathParts(input.tag);
+          const tag = tagNamedByPath(parts);
+          if (!tag) {
+            throw new Error(`Tag not found: ${input.tag}`);
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, tag: input, meta: { from: tagPath(tag) } }, null, 2);
+          }
+
+          const oldPath = tagPath(tag);
+          tag.name = input.newName;
+
+          return JSON.stringify({
+            tag: {
+              id: tag.id.primaryKey,
+              name: tag.name,
+              path: tagPath(tag),
+              renamedFrom: oldPath
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func deleteTag(_ delete: DeleteTag) throws -> String {
+        let tag = try jsonLiteral(delete.tag)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            tag: \(tag),
+            dryRun: \(delete.dryRun ? "true" : "false")
+          };
+
+          const parts = tagPathParts(input.tag);
+          const tag = tagNamedByPath(parts);
+          if (!tag) {
+            throw new Error(`Tag not found: ${input.tag}`);
+          }
+
+          const tagInfo = {
+            id: tag.id.primaryKey,
+            name: tag.name,
+            path: tagPath(tag),
+            childCount: tag.tags.length,
+            taskCount: tag.flattenedTasks.length
+          };
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, tag: tagInfo }, null, 2);
+          }
+
+          deleteObject(tag);
+
+          return JSON.stringify({ deleted: true, tag: tagInfo }, null, 2);
+        })();
+        """
+    }
+
+    static func moveTag(_ move: MoveTag) throws -> String {
+        let tag = try jsonLiteral(move.tag)
+        let newParent = try jsonLiteral(move.newParent)
+
+        return """
+        (() => {
+          \(taskSerializationSupport)
+
+          const input = {
+            tag: \(tag),
+            newParent: \(newParent),
+            dryRun: \(move.dryRun ? "true" : "false")
+          };
+
+          const tagParts = tagPathParts(input.tag);
+          const tag = tagNamedByPath(tagParts);
+          if (!tag) {
+            throw new Error(`Tag not found: ${input.tag}`);
+          }
+
+          let newParentTag = null;
+          if (input.newParent !== null) {
+            const parentParts = tagPathParts(input.newParent);
+            newParentTag = tagNamedByPath(parentParts);
+            if (!newParentTag) {
+              throw new Error(`Destination tag not found: ${input.newParent}`);
+            }
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              tag: input,
+              meta: {
+                from: tagPath(tag),
+                to: newParentTag ? tagPath(newParentTag) : null
+              }
+            }, null, 2);
+          }
+
+          const destination = newParentTag ? newParentTag.ending : tags.ending;
+          moveTags([tag], destination);
+
+          return JSON.stringify({
+            tag: {
+              id: tag.id.primaryKey,
+              name: tag.name,
+              path: tagPath(tag)
+            }
           }, null, 2);
         })();
         """

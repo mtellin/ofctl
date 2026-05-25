@@ -724,6 +724,104 @@ Use `--dry-run` to preview without mutating:
 ofctl project-move "Home Maintenance" --to-folder Home --dry-run
 ```
 
+## tags
+
+Lists all tags with their full path, parent, and child count.
+
+```sh
+ofctl tags [--format json|text]
+```
+
+```sh
+ofctl tags --format text
+```
+
+Each JSON entry includes `id`, `name`, `path` (slash-delimited full path), `parent`,
+`parentPath`, and `childCount`.
+
+Tags are not folder-scoped — all tags are visible regardless of privacy scope.
+
+## tag-create
+
+Creates a new tag, optionally under an existing parent tag.
+
+```sh
+ofctl tag-create NAME [--parent TAG_PATH] [--dry-run]
+```
+
+Create a top-level tag:
+
+```sh
+ofctl tag-create "Contexts"
+```
+
+Create a child tag (parent resolved by name or slash-delimited path):
+
+```sh
+ofctl tag-create "Errands" --parent "Contexts"
+ofctl tag-create "Home" --parent "Contexts/Errands"
+```
+
+Errors if a tag with that name already exists at the target path.
+
+## tag-rename
+
+Renames an existing tag.
+
+```sh
+ofctl tag-rename TAG_PATH --to NEW_NAME [--dry-run]
+```
+
+```sh
+ofctl tag-rename "Contexts/Errands" --to "Out & About"
+ofctl tag-rename "Old Label" --to "New Label" --dry-run
+```
+
+The tag path uses the tag name at each level separated by `/`. Only the leaf name
+is changed; the tag remains in its current location in the hierarchy.
+
+## tag-delete
+
+Deletes a tag. The response includes `childCount` and `taskCount` (all descendant
+tasks carrying this tag) so you can see the blast radius before committing.
+
+```sh
+ofctl tag-delete TAG_PATH [--dry-run]
+```
+
+```sh
+ofctl tag-delete "Status/Deprecated" --dry-run
+ofctl tag-delete "Status/Deprecated"
+```
+
+Deleting a parent tag also removes all child tags.
+
+## tag-move
+
+Reparents a tag under a different tag, or moves it to the top level.
+
+```sh
+ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
+```
+
+Move to a different parent:
+
+```sh
+ofctl tag-move "Errands" --to-parent "Contexts"
+```
+
+Move to the top level:
+
+```sh
+ofctl tag-move "Contexts/Errands" --to-parent none
+```
+
+Use `--dry-run` to preview without mutating:
+
+```sh
+ofctl tag-move "Errands" --to-parent "Contexts" --dry-run
+```
+
 ## folder-create
 
 Creates a new OmniFocus folder, optionally nested inside an existing parent.

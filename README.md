@@ -182,6 +182,16 @@ ofctl folder-create "Garden" --parent "Home Maintenance"
 ofctl folder-create "Work Projects" --dry-run
 ```
 
+Manage tags:
+
+```sh
+ofctl tags --format text
+ofctl tag-create "Errands" --parent "Contexts"
+ofctl tag-rename "Contexts/Errands" --to "Out & About"
+ofctl tag-move "Out & About" --to-parent "Status" --dry-run
+ofctl tag-delete "Deprecated Tag" --dry-run
+```
+
 ## Documentation
 
 - [User Guide](docs/user-guide.md): complete command reference and examples.
@@ -213,6 +223,12 @@ ofctl folder-create "Work Projects" --dry-run
   optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`).
 - `ofctl folder-create`: create a new OmniFocus folder, optionally nested
   inside an existing parent folder.
+- `ofctl tags`: list all tags with their paths and child counts.
+- `ofctl tag-create`: create a new tag, optionally under a parent tag.
+- `ofctl tag-rename`: rename an existing tag.
+- `ofctl tag-delete`: delete a tag (reports task and child counts in response).
+- `ofctl tag-move`: reparent a tag under a different tag or move it to the top
+  level with `--to-parent none`.
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created

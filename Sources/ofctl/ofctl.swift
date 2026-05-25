@@ -34,6 +34,17 @@ struct OFCTL {
                 print(try client.createProject(create))
             case .folderCreate(let create):
                 print(try client.createFolder(create))
+            case .tags(let query):
+                let output = try client.tags(query)
+                printTags(output, format: query.format)
+            case .tagCreate(let create):
+                print(try client.createTag(create))
+            case .tagRename(let rename):
+                print(try client.renameTag(rename))
+            case .tagDelete(let delete):
+                print(try client.deleteTag(delete))
+            case .tagMove(let move):
+                print(try client.moveTag(move))
             }
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
@@ -86,6 +97,27 @@ struct OFCTL {
         let base = "- \(name) [project: \(location)] [tags: \(tags)] [defer: \(deferDate)] [planned: \(planned)] [due: \(due)] [repeat: \(repeatRule)]"
         guard let completion else { return base }
         return "\(base) [completed: \(completion)]"
+    }
+
+    private static func printTags(_ json: String, format: OutputFormat) {
+        guard format == .text,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tagList = object["tags"] as? [[String: Any]]
+        else {
+            print(json)
+            return
+        }
+
+        for tag in tagList {
+            let path = tag["path"] as? String ?? (tag["name"] as? String ?? "(unnamed)")
+            let childCount = tag["childCount"] as? Int ?? 0
+            if childCount > 0 {
+                print("- \(path) [children: \(childCount)]")
+            } else {
+                print("- \(path)")
+            }
+        }
     }
 
     private static func printPerspectives(_ json: String, format: OutputFormat) {
