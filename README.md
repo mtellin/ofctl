@@ -233,9 +233,9 @@ ofctl project-delete "Home Maintenance"
   a parent action group.
 - `ofctl add-group`: create an action group, optionally sequential/parallel and
   optionally completed by its children.
-- `ofctl update`: update task name, project, tags, dates, repeat rule,
-  duration, notes, completion state, dropped state, flag state, action group
-  settings, and skipped repeating occurrences.
+- `ofctl update`: update one or more tasks by ID — name, project, tags, dates,
+  repeat rule, duration, notes, completion state, dropped state, flag state,
+  action group settings, and skipped repeating occurrences.
 - `ofctl project-status`: set a project to active, on hold, completed, or
   dropped.
 - `ofctl project-move`: move a project into a folder (or to the library top

@@ -565,7 +565,7 @@ enum OmniJavaScript {
     }
 
     static func updateTask(_ task: UpdateTask, privacyScope: PrivacyScope = .unrestricted) throws -> String {
-        let id = try jsonLiteral(task.id)
+        let ids = try jsonLiteral(task.ids)
         let name = try jsonLiteral(task.name)
         let project = optionalJSONAssignment(task.project)
         let addTags = try jsonLiteral(task.addTags)
@@ -591,7 +591,7 @@ enum OmniJavaScript {
           \(taskSerializationSupport)
 
           const input = {
-            id: \(id),
+            ids: \(ids),
             name: \(name),
             project: \(project),
             addTags: \(addTags),
@@ -671,10 +671,13 @@ enum OmniJavaScript {
             return { project: new Project(name, library.ending), created: true };
           }
 
-          const task = Task.byIdentifier(input.id);
-          if (!task || !taskAllowedByPrivacyScope(task)) {
-            throw new Error(`Task not found or not available in current privacy scope: ${input.id}`);
-          }
+          const resolvedTasks = input.ids.map(id => {
+            const t = Task.byIdentifier(id);
+            if (!t || !taskAllowedByPrivacyScope(t)) {
+              throw new Error(`Task not found or not available in current privacy scope: ${id}`);
+            }
+            return t;
+          });
 
           const dryRunProject = input.project === undefined || input.project === null
             ? { project: null, created: false }
@@ -690,7 +693,7 @@ enum OmniJavaScript {
           if (input.dryRun) {
             return JSON.stringify({
               dryRun: true,
-              task: input,
+              tasks: resolvedTasks.map(t => ({ id: t.id.primaryKey, name: t.name })),
               meta: {
                 privacyScope,
                 projectExists: input.project !== undefined && input.project !== null ? dryRunProject.project !== null : null,
@@ -711,44 +714,41 @@ enum OmniJavaScript {
           }
 
           let projectCreated = false;
-          if (input.name !== null) { task.name = input.name; }
-          if (input.note !== null) { setMarkdownNote(task, input.note); }
           if (input.project !== undefined) {
             const projectResult = input.project === null
               ? { project: null, created: false }
               : projectNamedOrCreated(input.project);
             projectCreated = projectResult.created;
             const insertion = projectResult.project === null ? inbox.ending : projectResult.project.ending;
-            moveTasks([task], insertion);
+            moveTasks(resolvedTasks, insertion);
           }
-          if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
-          if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
-          if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
-          if (input.repeatRule !== undefined) { task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod); }
-          if (input.estimatedMinutes !== undefined) { task.estimatedMinutes = input.estimatedMinutes; }
-          if (input.sequential !== undefined) { task.sequential = input.sequential; }
-          if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
-          if (input.flagged !== undefined) { task.flagged = input.flagged; }
-          if (input.clearTags) { task.clearTags(); }
-          input.removeTags.forEach(name => task.removeTag(existingTagNamed(name)));
-          input.addTags.forEach(name => task.addTag(tagNamedOrCreated(name)));
 
-          let resultTask = task;
-          if (input.incomplete) {
-            task.markIncomplete();
-          }
-          if (input.complete) {
-            resultTask = task.markComplete(parseDate(input.completedAt));
-          }
-          if (input.drop) {
-            task.drop(input.dropAllOccurrences);
-          }
-          if (input.skip) {
-            task.drop(false);
-          }
+          const resultTasks = resolvedTasks.map(task => {
+            if (input.name !== null) { task.name = input.name; }
+            if (input.note !== null) { setMarkdownNote(task, input.note); }
+            if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
+            if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
+            if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
+            if (input.repeatRule !== undefined) { task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod); }
+            if (input.estimatedMinutes !== undefined) { task.estimatedMinutes = input.estimatedMinutes; }
+            if (input.sequential !== undefined) { task.sequential = input.sequential; }
+            if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
+            if (input.flagged !== undefined) { task.flagged = input.flagged; }
+            if (input.clearTags) { task.clearTags(); }
+            input.removeTags.forEach(name => task.removeTag(existingTagNamed(name)));
+            input.addTags.forEach(name => task.addTag(tagNamedOrCreated(name)));
+
+            let resultTask = task;
+            if (input.incomplete) { task.markIncomplete(); }
+            if (input.complete) { resultTask = task.markComplete(parseDate(input.completedAt)); }
+            if (input.drop) { task.drop(input.dropAllOccurrences); }
+            if (input.skip) { task.drop(false); }
+
+            return serializeTask(resultTask, false, input.sequential !== undefined || input.completedByChildren !== undefined);
+          });
 
           return JSON.stringify({
-            task: serializeTask(resultTask, false, input.sequential !== undefined || input.completedByChildren !== undefined),
+            tasks: resultTasks,
             meta: {
               privacyScope,
               createdProject: projectCreated

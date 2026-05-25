@@ -358,7 +358,7 @@ import Testing
 @Test func parsesUpdateTaskWithFlag() throws {
     let flagged = try CLI.parse(["ofctl", "update", "abc123", "--flag"])
     #expect(flagged == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -383,7 +383,7 @@ import Testing
 
     let unflagged = try CLI.parse(["ofctl", "update", "abc123", "--no-flag"])
     #expect(unflagged == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -422,7 +422,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: ["Taylor Morgan"],
@@ -452,7 +452,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -490,7 +490,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: .some(nil),
         addTags: ["Taylor Morgan"],
@@ -521,7 +521,7 @@ import Testing
     ])
 
     #expect(options == CommandLineOptions(command: .update(UpdateTask(
-        id: "group123",
+        ids: ["group123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -552,7 +552,7 @@ import Testing
     ])
 
     #expect(dropped == CommandLineOptions(command: .update(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -577,6 +577,38 @@ import Testing
     #expect(throws: CLIError.self) {
         try CLI.parse(["ofctl", "update", "abc123", "--skip", "--drop"])
     }
+}
+
+@Test func parsesUpdateTaskWithMultipleIDs() throws {
+    let options = try CLI.parse([
+        "ofctl", "update", "id1", "id2", "id3",
+        "--flag",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .update(UpdateTask(
+        ids: ["id1", "id2", "id3"],
+        name: nil,
+        project: nil,
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        flagged: true,
+        dryRun: true
+    ))))
 }
 
 @Test func parsesProjectStatusUpdate() throws {
@@ -941,7 +973,7 @@ import Testing
 
     #expect(addScript.contains("assertAddDestinationAvailable(dryRunProject, parentTask);"))
     #expect(addScript.contains("assertTaskAvailableInPrivacyScope(parentTask"))
-    #expect(updateScript.contains("!task || !taskAllowedByPrivacyScope(task)"))
+    #expect(updateScript.contains("!t || !taskAllowedByPrivacyScope(t)"))
     #expect(updateScript.contains("!dryRunProject.project || !projectAllowedByPrivacyScope(dryRunProject.project)"))
     #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
 
@@ -979,7 +1011,7 @@ import Testing
         dryRun: false
     ))
     let updateScript = try OmniJavaScript.updateTask(UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: nil,
         addTags: [],
@@ -1070,7 +1102,7 @@ private func defaultAddTask() -> AddTask {
 
 private func defaultUpdateTask() -> UpdateTask {
     UpdateTask(
-        id: "abc123",
+        ids: ["abc123"],
         name: nil,
         project: .some("Product Launch"),
         addTags: [],

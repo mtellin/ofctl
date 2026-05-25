@@ -224,6 +224,13 @@ ofctl update "$TASK_ID" --complete --dry-run
 ofctl update "$TASK_ID" --skip --dry-run
 ```
 
+Batch updates (multiple IDs apply the same mutation to all):
+
+```sh
+ofctl update "$ID1" "$ID2" "$ID3" --add-tag "Waiting On" --dry-run
+ofctl update "$ID1" "$ID2" --complete --dry-run
+```
+
 Controlled action group workflows:
 
 ```sh

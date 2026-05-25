@@ -644,6 +644,16 @@ Dry-run:
 ofctl update TASK_ID --planned none --dry-run
 ```
 
+Apply the same change to multiple tasks at once:
+
+```sh
+ofctl update ID1 ID2 ID3 --add-tag "Waiting On" --dry-run
+ofctl update ID1 ID2 ID3 --complete --dry-run
+```
+
+The response contains a `tasks` array with one entry per ID. All mutations apply
+to every task — use `--dry-run` first when touching more than one task.
+
 ## Creating Projects
 
 ### Regular project
