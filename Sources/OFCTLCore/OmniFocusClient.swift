@@ -101,6 +101,14 @@ public struct OmniFocusClient {
         try runner.runOmniJavaScript(OmniJavaScript.moveTag(move))
     }
 
+    public func projects(_ query: ProjectsQuery) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.projectsQuery(query, privacyScope: privacyScope))
+    }
+
+    public func reviewProject(_ review: UpdateProjectReview) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.updateProjectReview(review, privacyScope: privacyScope))
+    }
+
     public func deleteTasks(_ delete: DeleteTasks) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.deleteTasks(delete, privacyScope: privacyScope))
     }
@@ -975,6 +983,111 @@ enum OmniJavaScript {
         """
     }
 
+    static func projectsQuery(_ query: ProjectsQuery, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let folder = try jsonLiteral(query.folder)
+        let status = try jsonLiteral(query.status?.rawValue)
+        let limit = query.limit.map(String.init) ?? "null"
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+          \(projectSerializationSupport)
+
+          const folderFilter = \(folder);
+          const statusFilter = \(status);
+          const dueForReview = \(query.dueForReview ? "true" : "false");
+          const limit = \(limit);
+          const now = new Date();
+
+          const matched = flattenedProjects.filter(project => {
+            if (!projectAllowedByPrivacyScope(project)) { return false; }
+            if (folderFilter && !projectFolderNamesForProject(project).includes(folderFilter)) { return false; }
+            if (statusFilter && projectStatusName(project.status) !== statusFilter) { return false; }
+            if (dueForReview && !(project.nextReviewDate && project.nextReviewDate <= now)) { return false; }
+            return true;
+          });
+
+          const returned = limit === null ? matched : matched.slice(0, limit);
+          const projects = returned.map(p => serializeProject(p));
+
+          return JSON.stringify({
+            projects,
+            meta: {
+              folder: folderFilter,
+              status: statusFilter,
+              dueForReview,
+              privacyScope,
+              total: matched.length,
+              count: projects.length,
+              limit,
+              truncated: limit !== null && matched.length > limit
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func updateProjectReview(_ review: UpdateProjectReview, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(review.project)
+        let interval = optionalJSONAssignment(review.interval)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+          \(projectSerializationSupport)
+
+          const input = {
+            project: \(project),
+            markReviewed: \(review.markReviewed ? "true" : "false"),
+            interval: \(interval),
+            dryRun: \(review.dryRun ? "true" : "false")
+          };
+
+          function parseIntervalSpec(spec) {
+            if (!spec) { return null; }
+            const match = /^(\\d+)([dwmy])$/.exec(spec);
+            if (!match) { throw new Error(`Invalid interval spec "${spec}" — use format like 1w, 2m, 3d, 1y`); }
+            const steps = Number(match[1]);
+            const unitMap = {
+              d: Project.ReviewInterval.Unit.Days,
+              w: Project.ReviewInterval.Unit.Weeks,
+              m: Project.ReviewInterval.Unit.Months,
+              y: Project.ReviewInterval.Unit.Years
+            };
+            return new Project.ReviewInterval(steps, unitMap[match[2]]);
+          }
+
+          const project = flattenedProjects.byName(input.project);
+          if (!project) { throw new Error(`Project not found: ${input.project}`); }
+          assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              project: serializeProject(project),
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          if (input.interval !== undefined) {
+            project.reviewInterval = parseIntervalSpec(input.interval);
+          }
+          if (input.markReviewed) {
+            project.markReviewed();
+          }
+
+          return JSON.stringify({
+            project: serializeProject(project),
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
     static func deleteTasks(_ delete: DeleteTasks, privacyScope: PrivacyScope = .unrestricted) throws -> String {
         let ids = try jsonLiteral(delete.ids)
         let privacy = try privacyPrelude(privacyScope)
@@ -1274,6 +1387,40 @@ enum OmniJavaScript {
         """
     }
 }
+
+private let projectSerializationSupport = #"""
+function projectStatusName(status) {
+  if (status === Project.Status.Active) { return "active"; }
+  if (status === Project.Status.OnHold) { return "on-hold"; }
+  if (status === Project.Status.Done) { return "completed"; }
+  if (status === Project.Status.Dropped) { return "dropped"; }
+  return String(status);
+}
+
+function reviewIntervalUnitName(unit) {
+  if (unit === Project.ReviewInterval.Unit.Days) { return "days"; }
+  if (unit === Project.ReviewInterval.Unit.Weeks) { return "weeks"; }
+  if (unit === Project.ReviewInterval.Unit.Months) { return "months"; }
+  if (unit === Project.ReviewInterval.Unit.Years) { return "years"; }
+  return String(unit);
+}
+
+function serializeProject(project) {
+  const ri = project.reviewInterval;
+  return {
+    id: project.id.primaryKey,
+    name: project.name,
+    folder: projectFolderNamesForProject(project),
+    status: projectStatusName(project.status),
+    singleton: project.containsSingletonActions,
+    sequential: project.sequential,
+    completedByChildren: project.completedByChildren,
+    reviewInterval: ri ? { steps: ri.steps, unit: reviewIntervalUnitName(ri.unit) } : null,
+    nextReviewDate: iso(project.nextReviewDate),
+    lastReviewDate: iso(project.lastReviewDate)
+  };
+}
+"""#
 
 private let folderSupport = #"""
 function folderForPath(pathStr) {

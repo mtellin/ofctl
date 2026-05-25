@@ -724,6 +724,81 @@ Use `--dry-run` to preview without mutating:
 ofctl project-move "Home Maintenance" --to-folder Home --dry-run
 ```
 
+## projects
+
+Lists projects with optional filtering. Each project in the JSON result includes
+`id`, `name`, `folder` (array), `status`, `singleton`, `sequential`,
+`completedByChildren`, `reviewInterval` (`{steps, unit}` or null),
+`nextReviewDate`, and `lastReviewDate`.
+
+```sh
+ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
+```
+
+List all projects:
+
+```sh
+ofctl projects --format text
+```
+
+Projects in a specific folder:
+
+```sh
+ofctl projects --folder Work --format text
+```
+
+Only active projects:
+
+```sh
+ofctl projects --status active --format text
+```
+
+Projects due for review (nextReviewDate ≤ now):
+
+```sh
+ofctl projects --due-for-review --format text
+```
+
+## project-review
+
+Sets a project's review interval and/or marks it as reviewed.
+
+```sh
+ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
+```
+
+Interval spec format: `<N><unit>` where unit is `d` (days), `w` (weeks),
+`m` (months), or `y` (years). Example: `1w`, `2m`, `90d`, `1y`.
+
+Set a weekly review interval:
+
+```sh
+ofctl project-review "Work Notifications" --interval 1w
+```
+
+Mark a project as reviewed:
+
+```sh
+ofctl project-review "Home Maintenance" --mark-reviewed
+```
+
+Set interval and mark reviewed together:
+
+```sh
+ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w --dry-run
+ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w
+```
+
+Clear the review interval:
+
+```sh
+ofctl project-review "Home Maintenance" --interval none
+```
+
+> **API note:** `--mark-reviewed` calls `project.markReviewed()` in OmniJS,
+> which advances `nextReviewDate` by the review interval. If the project has no
+> review interval set, setting one first is recommended.
+
 ## task-delete
 
 Deletes one or more tasks by OmniFocus ID. All IDs are validated first; if any

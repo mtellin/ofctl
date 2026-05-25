@@ -192,6 +192,17 @@ ofctl tag-move "Out & About" --to-parent "Status" --dry-run
 ofctl tag-delete "Deprecated Tag" --dry-run
 ```
 
+List and review projects:
+
+```sh
+ofctl projects --format text
+ofctl projects --due-for-review --format text
+ofctl projects --folder Work --status active --format text
+ofctl project-review "Work Notifications" --interval 1w
+ofctl project-review "Work Notifications" --mark-reviewed
+ofctl project-review "Work Notifications" --mark-reviewed --interval 2w --dry-run
+```
+
 Delete tasks and projects (always dry-run first):
 
 ```sh
@@ -241,6 +252,11 @@ ofctl project-delete "Home Maintenance"
   level with `--to-parent none`.
 - `ofctl task-delete`: delete one or more tasks by ID (accepts multiple IDs).
 - `ofctl project-delete`: delete a project by name.
+- `ofctl projects`: list projects with optional folder, status, and
+  `--due-for-review` filters. Includes review interval and next/last review
+  date in JSON output.
+- `ofctl project-review`: set a project's review interval and/or mark it as
+  reviewed. Interval spec: `<N><d|w|m|y>` (e.g. `1w`, `2m`); `none` clears.
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created

@@ -740,6 +740,88 @@ import Testing
     }
 }
 
+@Test func parsesProjectsQuery() throws {
+    let defaults = try CLI.parse(["ofctl", "projects"])
+    #expect(defaults == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: nil,
+        status: nil,
+        dueForReview: false,
+        limit: 100,
+        format: .json
+    ))))
+
+    let filtered = try CLI.parse([
+        "ofctl", "projects",
+        "--folder", "Work",
+        "--status", "active",
+        "--due-for-review",
+        "--limit", "10",
+        "--format", "text",
+    ])
+    #expect(filtered == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: "Work",
+        status: .active,
+        dueForReview: true,
+        limit: 10,
+        format: .text
+    ))))
+}
+
+@Test func parsesProjectsQueryAll() throws {
+    let options = try CLI.parse(["ofctl", "projects", "--all"])
+    #expect(options == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: nil,
+        status: nil,
+        dueForReview: false,
+        limit: nil,
+        format: .json
+    ))))
+}
+
+@Test func parsesProjectReview() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-review", "Home Maintenance",
+        "--mark-reviewed",
+        "--interval", "1w",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .projectReview(UpdateProjectReview(
+        project: "Home Maintenance",
+        markReviewed: true,
+        interval: .some("1w"),
+        dryRun: true
+    ))))
+}
+
+@Test func parsesProjectReviewClearInterval() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-review", "Home Maintenance",
+        "--interval", "none",
+    ])
+    #expect(options == CommandLineOptions(command: .projectReview(UpdateProjectReview(
+        project: "Home Maintenance",
+        markReviewed: false,
+        interval: .some(nil),
+        dryRun: false
+    ))))
+}
+
+@Test func workPrivacyScopeGuardsProjectsAndReview() throws {
+    let projectsScript = try OmniJavaScript.projectsQuery(
+        ProjectsQuery(folder: nil, status: nil, dueForReview: false, limit: 100, format: .json),
+        privacyScope: .work
+    )
+    #expect(projectsScript.contains("projectAllowedByPrivacyScope(project)"))
+    #expect(projectsScript.contains("privacyScope"))
+
+    let reviewScript = try OmniJavaScript.updateProjectReview(
+        UpdateProjectReview(project: "Work Notifications", markReviewed: true, interval: nil, dryRun: false),
+        privacyScope: .work
+    )
+    #expect(reviewScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    #expect(reviewScript.contains("project.markReviewed()"))
+}
+
 @Test func parsesTaskDelete() throws {
     let single = try CLI.parse(["ofctl", "task-delete", "abc123"])
     #expect(single == CommandLineOptions(command: .taskDelete(DeleteTasks(ids: ["abc123"], dryRun: false))))

@@ -34,6 +34,8 @@ The command surface is intentionally narrow:
 - `tag-create`, `tag-rename`, `tag-delete`, `tag-move` for tag management; always use `--dry-run` before `tag-delete` to confirm the blast radius
 - `task-delete TASK_ID [TASK_ID ...]` to delete tasks; always `--dry-run` first and confirm IDs with the user before deleting
 - `project-delete PROJECT_NAME` to delete a project; always `--dry-run` first
+- `projects` to list projects with review dates; `--due-for-review` is useful for surfacing overdue reviews
+- `project-review PROJECT_NAME --mark-reviewed` to advance the review date; use `--interval SPEC` (e.g. `1w`) to set a recurring interval
 
 This is easier to review and approve than general-purpose application
 automation or a full OmniFocus MCP server.

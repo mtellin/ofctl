@@ -49,6 +49,11 @@ struct OFCTL {
                 print(try client.deleteTasks(delete))
             case .projectDelete(let delete):
                 print(try client.deleteProject(delete))
+            case .projects(let query):
+                let output = try client.projects(query)
+                printProjects(output, format: query.format)
+            case .projectReview(let review):
+                print(try client.reviewProject(review))
             }
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
@@ -101,6 +106,26 @@ struct OFCTL {
         let base = "- \(name) [project: \(location)] [tags: \(tags)] [defer: \(deferDate)] [planned: \(planned)] [due: \(due)] [repeat: \(repeatRule)]"
         guard let completion else { return base }
         return "\(base) [completed: \(completion)]"
+    }
+
+    private static func printProjects(_ json: String, format: OutputFormat) {
+        guard format == .text,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let projectList = object["projects"] as? [[String: Any]]
+        else {
+            print(json)
+            return
+        }
+
+        for project in projectList {
+            let name = project["name"] as? String ?? "(unnamed)"
+            let status = project["status"] as? String ?? "unknown"
+            let folder = (project["folder"] as? [String] ?? []).joined(separator: "/")
+            let nextReview = project["nextReviewDate"] as? String ?? "none"
+            let location = folder.isEmpty ? "library" : folder
+            print("- \(name) [status: \(status)] [folder: \(location)] [next review: \(nextReview)]")
+        }
     }
 
     private static func printTags(_ json: String, format: OutputFormat) {

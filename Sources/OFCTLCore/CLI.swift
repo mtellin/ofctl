@@ -33,6 +33,8 @@ public struct CommandLineOptions: Equatable {
         case tagMove(MoveTag)
         case taskDelete(DeleteTasks)
         case projectDelete(DeleteProject)
+        case projects(ProjectsQuery)
+        case projectReview(UpdateProjectReview)
     }
 
     public var command: Command
@@ -173,6 +175,21 @@ public struct DeleteProject: Equatable {
     public var dryRun: Bool
 }
 
+public struct ProjectsQuery: Equatable {
+    public var folder: String?
+    public var status: ProjectStatus?
+    public var dueForReview: Bool
+    public var limit: Int?
+    public var format: OutputFormat
+}
+
+public struct UpdateProjectReview: Equatable {
+    public var project: String
+    public var markReviewed: Bool
+    public var interval: String??
+    public var dryRun: Bool
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -218,6 +235,8 @@ public enum CLI {
       ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
       ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
       ofctl project-delete PROJECT_NAME [--dry-run]
+      ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
+      ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -272,6 +291,10 @@ public enum CLI {
             return try CommandLineOptions(command: .taskDelete(parseDeleteTasks(args)))
         case "project-delete":
             return try CommandLineOptions(command: .projectDelete(parseDeleteProject(args)))
+        case "projects":
+            return try CommandLineOptions(command: .projects(parseProjectsQuery(args)))
+        case "project-review":
+            return try CommandLineOptions(command: .projectReview(parseUpdateProjectReview(args)))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -699,6 +722,76 @@ public enum CLI {
         }
 
         return CreateProject(name: name, folder: folder, singleton: singleton, onHold: onHold, dryRun: dryRun)
+    }
+
+    private static func parseProjectsQuery(_ args: [String]) throws -> ProjectsQuery {
+        var parser = OptionParser(args)
+        var query = ProjectsQuery(
+            folder: nil,
+            status: nil,
+            dueForReview: false,
+            limit: 100,
+            format: .json
+        )
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--folder":
+                query.folder = try parser.value(after: arg)
+            case "--status":
+                let value = try parser.value(after: arg)
+                guard let status = ProjectStatus(rawValue: value) else {
+                    throw CLIError.usage("Unsupported project status: \(value)")
+                }
+                query.status = status
+            case "--due-for-review":
+                query.dueForReview = true
+            case "--limit":
+                let value = try parser.value(after: arg)
+                guard let limit = Int(value), limit > 0 else {
+                    throw CLIError.usage("--limit must be a positive integer")
+                }
+                query.limit = limit
+            case "--all":
+                query.limit = nil
+            case "--format":
+                let value = try parser.value(after: arg)
+                guard let format = OutputFormat(rawValue: value) else {
+                    throw CLIError.usage("Unsupported format: \(value)")
+                }
+                query.format = format
+            default:
+                throw CLIError.usage("Unexpected argument for projects: \(arg)")
+            }
+        }
+
+        return query
+    }
+
+    private static func parseUpdateProjectReview(_ args: [String]) throws -> UpdateProjectReview {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-review requires a project name\n\n\(help)")
+        }
+
+        var markReviewed = false
+        var interval: String??
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--mark-reviewed":
+                markReviewed = true
+            case "--interval":
+                interval = .some(try nullableValue(after: arg, parser: &parser))
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-review: \(arg)")
+            }
+        }
+
+        return UpdateProjectReview(project: project, markReviewed: markReviewed, interval: interval, dryRun: dryRun)
     }
 
     private static func parseDeleteTasks(_ args: [String]) throws -> DeleteTasks {
