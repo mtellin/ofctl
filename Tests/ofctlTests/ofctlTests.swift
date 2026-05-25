@@ -622,13 +622,13 @@ import Testing
 
 @Test func parsesProjectCreate() throws {
     let options = try CLI.parse([
-        "ofctl", "project-create", "Rubrik Next GitHub",
+        "ofctl", "project-create", "Work Notifications",
         "--folder", "Work",
         "--singleton",
     ])
 
     #expect(options == CommandLineOptions(command: .projectCreate(CreateProject(
-        name: "Rubrik Next GitHub",
+        name: "Work Notifications",
         folder: "Work",
         singleton: true,
         onHold: false,

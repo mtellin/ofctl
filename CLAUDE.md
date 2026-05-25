@@ -21,6 +21,10 @@ Additionally:
   with docs — it is the authoritative usage reference.
 - Add or update a parser test in `Tests/ofctlTests/ofctlTests.swift` for every new
   or modified command flag.
+- **No personal or employer-specific names in examples.** Use generic placeholders
+  like "Work Notifications", "Home Maintenance", "Product Launch", "My Project".
+  Never use real project names, people's names, company names, or hostnames from
+  your actual OmniFocus database.
 
 ## Architecture
 
