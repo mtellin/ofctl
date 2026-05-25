@@ -192,6 +192,16 @@ ofctl tag-move "Out & About" --to-parent "Status" --dry-run
 ofctl tag-delete "Deprecated Tag" --dry-run
 ```
 
+Delete tasks and projects (always dry-run first):
+
+```sh
+ofctl task-delete TASK_ID --dry-run
+ofctl task-delete TASK_ID
+ofctl task-delete ID1 ID2 ID3 --dry-run
+ofctl project-delete "Home Maintenance" --dry-run
+ofctl project-delete "Home Maintenance"
+```
+
 ## Documentation
 
 - [User Guide](docs/user-guide.md): complete command reference and examples.
@@ -229,6 +239,8 @@ ofctl tag-delete "Deprecated Tag" --dry-run
 - `ofctl tag-delete`: delete a tag (reports task and child counts in response).
 - `ofctl tag-move`: reparent a tag under a different tag or move it to the top
   level with `--to-parent none`.
+- `ofctl task-delete`: delete one or more tasks by ID (accepts multiple IDs).
+- `ofctl project-delete`: delete a project by name.
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created

@@ -45,6 +45,10 @@ struct OFCTL {
                 print(try client.deleteTag(delete))
             case .tagMove(let move):
                 print(try client.moveTag(move))
+            case .taskDelete(let delete):
+                print(try client.deleteTasks(delete))
+            case .projectDelete(let delete):
+                print(try client.deleteProject(delete))
             }
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))

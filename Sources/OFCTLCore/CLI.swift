@@ -31,6 +31,8 @@ public struct CommandLineOptions: Equatable {
         case tagRename(RenameTag)
         case tagDelete(DeleteTag)
         case tagMove(MoveTag)
+        case taskDelete(DeleteTasks)
+        case projectDelete(DeleteProject)
     }
 
     public var command: Command
@@ -161,6 +163,16 @@ public struct MoveTag: Equatable {
     public var dryRun: Bool
 }
 
+public struct DeleteTasks: Equatable {
+    public var ids: [String]
+    public var dryRun: Bool
+}
+
+public struct DeleteProject: Equatable {
+    public var project: String
+    public var dryRun: Bool
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -204,6 +216,8 @@ public enum CLI {
       ofctl tag-rename TAG_PATH --to NEW_NAME [--dry-run]
       ofctl tag-delete TAG_PATH [--dry-run]
       ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
+      ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
+      ofctl project-delete PROJECT_NAME [--dry-run]
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -254,6 +268,10 @@ public enum CLI {
             return try CommandLineOptions(command: .tagDelete(parseDeleteTag(args)))
         case "tag-move":
             return try CommandLineOptions(command: .tagMove(parseMoveTag(args)))
+        case "task-delete":
+            return try CommandLineOptions(command: .taskDelete(parseDeleteTasks(args)))
+        case "project-delete":
+            return try CommandLineOptions(command: .projectDelete(parseDeleteProject(args)))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -683,6 +701,51 @@ public enum CLI {
         return CreateProject(name: name, folder: folder, singleton: singleton, onHold: onHold, dryRun: dryRun)
     }
 
+    private static func parseDeleteTasks(_ args: [String]) throws -> DeleteTasks {
+        var parser = OptionParser(args)
+        var ids: [String] = []
+
+        while let arg = parser.peek(), !arg.hasPrefix("--") {
+            _ = parser.next()
+            ids.append(arg)
+        }
+
+        guard !ids.isEmpty else {
+            throw CLIError.usage("task-delete requires at least one task id\n\n\(help)")
+        }
+
+        var dryRun = false
+        while let arg = parser.next() {
+            switch arg {
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for task-delete: \(arg)")
+            }
+        }
+
+        return DeleteTasks(ids: ids, dryRun: dryRun)
+    }
+
+    private static func parseDeleteProject(_ args: [String]) throws -> DeleteProject {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-delete requires a project name\n\n\(help)")
+        }
+
+        var dryRun = false
+        while let arg = parser.next() {
+            switch arg {
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-delete: \(arg)")
+            }
+        }
+
+        return DeleteProject(project: project, dryRun: dryRun)
+    }
+
     private static func parseCreateTag(_ args: [String]) throws -> CreateTag {
         var parser = OptionParser(args)
         guard let name = parser.next(), !name.hasPrefix("--") else {
@@ -823,6 +886,11 @@ private struct OptionParser {
 
     init(_ args: [String]) {
         self.args = args
+    }
+
+    func peek() -> String? {
+        guard index < args.count else { return nil }
+        return args[index]
     }
 
     mutating func next() -> String? {

@@ -724,6 +724,49 @@ Use `--dry-run` to preview without mutating:
 ofctl project-move "Home Maintenance" --to-folder Home --dry-run
 ```
 
+## task-delete
+
+Deletes one or more tasks by OmniFocus ID. All IDs are validated first; if any
+ID is not found or is outside the current privacy scope, the entire operation
+fails and nothing is deleted.
+
+```sh
+ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
+```
+
+Delete a single task:
+
+```sh
+ofctl task-delete TASK_ID --dry-run
+ofctl task-delete TASK_ID
+```
+
+Delete several tasks at once:
+
+```sh
+ofctl task-delete ID1 ID2 ID3 --dry-run
+ofctl task-delete ID1 ID2 ID3
+```
+
+The response includes an array of `{id, name, deleted}` objects.
+
+## project-delete
+
+Deletes a project by name.
+
+```sh
+ofctl project-delete PROJECT_NAME [--dry-run]
+```
+
+```sh
+ofctl project-delete "Home Maintenance" --dry-run
+ofctl project-delete "Home Maintenance"
+```
+
+The response includes `project.id`, `project.name`, and `project.folder` (the
+folder path array). Always dry-run first to confirm the correct project is
+targeted.
+
 ## tags
 
 Lists all tags with their full path, parent, and child count.

@@ -740,6 +740,52 @@ import Testing
     }
 }
 
+@Test func parsesTaskDelete() throws {
+    let single = try CLI.parse(["ofctl", "task-delete", "abc123"])
+    #expect(single == CommandLineOptions(command: .taskDelete(DeleteTasks(ids: ["abc123"], dryRun: false))))
+
+    let multi = try CLI.parse([
+        "ofctl", "task-delete", "abc123", "def456", "ghi789", "--dry-run",
+    ])
+    #expect(multi == CommandLineOptions(command: .taskDelete(DeleteTasks(
+        ids: ["abc123", "def456", "ghi789"],
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTaskDeleteRequiresId() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-delete"])
+    }
+}
+
+@Test func parsesProjectDelete() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-delete", "Home Maintenance",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .projectDelete(DeleteProject(
+        project: "Home Maintenance",
+        dryRun: true
+    ))))
+}
+
+@Test func workPrivacyScopeGuardsDeletes() throws {
+    let taskScript = try OmniJavaScript.deleteTasks(
+        DeleteTasks(ids: ["abc123"], dryRun: false),
+        privacyScope: .work
+    )
+    #expect(taskScript.contains("taskAllowedByPrivacyScope"))
+    #expect(taskScript.contains("Task not available in current privacy scope"))
+
+    let projectScript = try OmniJavaScript.deleteProject(
+        DeleteProject(project: "Home Maintenance", dryRun: false),
+        privacyScope: .work
+    )
+    #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    #expect(projectScript.contains("Project not available in current privacy scope"))
+}
+
 @Test func parsesFolderCreate() throws {
     let options = try CLI.parse([
         "ofctl", "folder-create", "Home Maintenance",

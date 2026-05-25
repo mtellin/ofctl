@@ -100,6 +100,14 @@ public struct OmniFocusClient {
     public func moveTag(_ move: MoveTag) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.moveTag(move))
     }
+
+    public func deleteTasks(_ delete: DeleteTasks) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.deleteTasks(delete, privacyScope: privacyScope))
+    }
+
+    public func deleteProject(_ delete: DeleteProject) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.deleteProject(delete, privacyScope: privacyScope))
+    }
 }
 
 enum OmniJavaScript {
@@ -963,6 +971,74 @@ enum OmniJavaScript {
             },
             meta: { privacyScope }
           }, null, 2);
+        })();
+        """
+    }
+
+    static func deleteTasks(_ delete: DeleteTasks, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let ids = try jsonLiteral(delete.ids)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            ids: \(ids),
+            dryRun: \(delete.dryRun ? "true" : "false")
+          };
+
+          const resolved = input.ids.map(id => {
+            const task = Task.byIdentifier(id);
+            if (!task) { throw new Error(`Task not found: ${id}`); }
+            if (!taskAllowedByPrivacyScope(task)) {
+              throw new Error(`Task not available in current privacy scope: ${id}`);
+            }
+            return task;
+          });
+
+          const results = resolved.map(task => {
+            const result = { id: task.id.primaryKey, name: task.name, deleted: !input.dryRun };
+            if (!input.dryRun) { deleteObject(task); }
+            return result;
+          });
+
+          return JSON.stringify({ tasks: results, dryRun: input.dryRun, meta: { privacyScope } }, null, 2);
+        })();
+        """
+    }
+
+    static func deleteProject(_ delete: DeleteProject, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(delete.project)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            project: \(project),
+            dryRun: \(delete.dryRun ? "true" : "false")
+          };
+
+          const project = flattenedProjects.byName(input.project);
+          if (!project) { throw new Error(`Project not found: ${input.project}`); }
+          assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
+
+          const projectInfo = {
+            id: project.id.primaryKey,
+            name: project.name,
+            folder: projectFolderNamesForProject(project)
+          };
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, project: projectInfo, meta: { privacyScope } }, null, 2);
+          }
+
+          deleteObject(project);
+          return JSON.stringify({ deleted: true, project: projectInfo, meta: { privacyScope } }, null, 2);
         })();
         """
     }
