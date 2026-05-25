@@ -644,110 +644,39 @@ Dry-run:
 ofctl update TASK_ID --planned none --dry-run
 ```
 
-## Creating Folders and Single-Action List Projects
+## Creating Projects
 
-`ofctl add --project NAME` creates a regular parallel project when the named
-project does not exist. It cannot create OmniFocus folders or set the
-single-action list project type.
+### Regular project
 
-To create a folder inside another folder, or to create a project as a
-single-action list, use `osascript -l JavaScript` (JXA) to create the
-structure, then send OmniAutomation JavaScript via Apple Events to convert
-the project type.
+`ofctl add --project NAME` creates a regular parallel project if one with that
+name does not already exist. Use this for multi-step projects where you add the
+first task at the same time.
 
-**Step 1 — create the folder and projects with JXA:**
+### Dedicated project-create command
+
+Use `project-create` when you want to create a project shell first — before
+adding tasks — or when you need options unavailable on `add`:
 
 ```sh
-osascript -l JavaScript << 'EOF'
-var of = Application("OmniFocus");
-var doc = of.defaultDocument;
-var parentFolder = doc.folders.whose({name: "Work"})[0];
+# Create a single-action list in the Work folder
+ofctl project-create "Work Notifications" --folder Work --singleton
 
-var newFolder = of.Folder({name: "Work Routines"});
-parentFolder.folders.push(newFolder);
+# Create a regular project in a subfolder
+ofctl project-create "Q3 Planning" --folder Work
 
-["Daily Work Routines", "Weekly Work Routines"].forEach(function(name) {
-    var proj = of.Project({name: name});
-    newFolder.projects.push(proj);
-});
-"Done";
-EOF
+# Create a project on-hold (Someday/Maybe)
+ofctl project-create "Learn Rust" --folder Personal --on-hold
+
+# Dry-run to preview without writing
+ofctl project-create "My Project" --folder Work --singleton --dry-run
 ```
 
-**Step 2 — convert projects to single-action lists via OmniAutomation:**
+`--singleton` sets the project as a single-action list (`containsSingletonActions = true`).
+Single-action lists are the right project type for ongoing collections of
+independent tasks — GitHub notifications, work admin items, etc.
 
-The correct OmniAutomation property is `containsSingletonActions`. Setting
-`project.singleton = true` reads back as true but does not change the project
-type in the UI and should not be used.
-
-```javascript
-// Send this via Apple Events (OFOC/OFEJ) — see OmniAutomation.swift for the
-// event format used by ofctl.
-(() => {
-    const names = ["Daily Work Routines", "Weekly Work Routines"];
-    for (const name of names) {
-        const proj = flattenedProjects.find(p => p.name === name);
-        if (!proj) throw new Error(`Project not found: ${name}`);
-        proj.sequential = false;
-        proj.containsSingletonActions = true;
-    }
-    return "Done";
-})()
-```
-
-A minimal Swift runner that sends OmniAutomation to OmniFocus using the same
-`OFOC/OFEJ` Apple Event channel as `ofctl`:
-
-```swift
-import Foundation
-import AppKit
-
-func fourCharCode(_ s: String) -> UInt32 {
-    s.utf8.reduce(UInt32(0)) { ($0 << 8) + UInt32($1) }
-}
-
-func runOmniJS(_ js: String) throws -> String {
-    let app = NSRunningApplication
-        .runningApplications(withBundleIdentifier: "com.omnigroup.OmniFocus4").first!
-    let target = NSAppleEventDescriptor(processIdentifier: app.processIdentifier)
-    let event = NSAppleEventDescriptor(
-        eventClass: fourCharCode("OFOC"), eventID: fourCharCode("OFEJ"),
-        targetDescriptor: target,
-        returnID: AEReturnID(kAutoGenerateReturnID),
-        transactionID: AETransactionID(kAnyTransactionID))
-    event.setParam(NSAppleEventDescriptor(string: js),
-                   forKeyword: AEKeyword(keyDirectObject))
-    let reply = try event.sendEvent(options: [.waitForReply], timeout: 30)
-    return reply.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue ?? ""
-}
-
-let script = """
-(() => {
-    const proj = flattenedProjects.find(p => p.name === "Weekly Work Routines");
-    proj.sequential = false;
-    proj.containsSingletonActions = true;
-    return "Done";
-})()
-"""
-print(try runOmniJS(script))
-```
-
-Save as `/tmp/fix.swift` and run with `swift /tmp/fix.swift`.
-
-**Moving an existing project into a folder:**
-
-Use OmniAutomation's `moveSections` — do not use JXA's `folder.projects.push(project)`, which
-creates a blank untitled project at that position instead of moving the existing one.
-
-```javascript
-// OmniAutomation — moves project into folder correctly
-(() => {
-    const workFolder = flattenedFolders.find(f => f.name === "Work");
-    const proj = flattenedProjects.find(p => p.name === "My Project");
-    moveSections([proj], workFolder.ending);
-    return proj.parentFolder ? proj.parentFolder.name : "moved";
-})()
-```
+`--folder` places the project inside the named folder. Omitting it creates the
+project at the library top level (not recommended — always use a folder).
 
 ## Project Status
 

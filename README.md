@@ -201,6 +201,8 @@ ofctl add "Ask Taylor about launch date" --tag "Taylor Morgan" --dry-run
   dropped.
 - `ofctl project-move`: move a project into a folder (or to the library top
   level with `--to-folder none`).
+- `ofctl project-create`: create a new project, optionally in a folder and
+  optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`).
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created

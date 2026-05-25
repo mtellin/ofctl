@@ -24,6 +24,7 @@ public struct CommandLineOptions: Equatable {
         case update(UpdateTask)
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
+        case projectCreate(CreateProject)
     }
 
     public var command: Command
@@ -113,6 +114,14 @@ public struct MoveProject: Equatable {
     public var dryRun: Bool
 }
 
+public struct CreateProject: Equatable {
+    public var name: String
+    public var folder: String?
+    public var singleton: Bool
+    public var onHold: Bool
+    public var dryRun: Bool
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -149,6 +158,7 @@ public enum CLI {
       ofctl update TASK_ID [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
+      ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -185,6 +195,8 @@ public enum CLI {
             return try CommandLineOptions(command: .projectStatus(parseUpdateProjectStatus(args)))
         case "project-move":
             return try CommandLineOptions(command: .projectMove(parseMoveProject(args)))
+        case "project-create":
+            return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -583,6 +595,35 @@ public enum CLI {
         }
 
         return MoveProject(project: project, folder: folder, dryRun: dryRun)
+    }
+
+    private static func parseCreateProject(_ args: [String]) throws -> CreateProject {
+        var parser = OptionParser(args)
+        guard let name = parser.next(), !name.hasPrefix("--") else {
+            throw CLIError.usage("project-create requires a project name\n\n\(help)")
+        }
+
+        var folder: String?
+        var singleton = false
+        var onHold = false
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--folder":
+                folder = try parser.value(after: arg)
+            case "--singleton":
+                singleton = true
+            case "--on-hold":
+                onHold = true
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-create: \(arg)")
+            }
+        }
+
+        return CreateProject(name: name, folder: folder, singleton: singleton, onHold: onHold, dryRun: dryRun)
     }
 
     private static func nullableValue(after option: String, parser: inout OptionParser) throws -> String? {

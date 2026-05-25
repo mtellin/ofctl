@@ -72,6 +72,10 @@ public struct OmniFocusClient {
     public func moveProject(_ move: MoveProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.moveProject(move, privacyScope: privacyScope))
     }
+
+    public func createProject(_ create: CreateProject) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.createProject(create, privacyScope: privacyScope))
+    }
 }
 
 enum OmniJavaScript {
@@ -853,6 +857,93 @@ enum OmniJavaScript {
               id: project.id.primaryKey,
               name: project.name,
               folder: folder ? folderPath(folder) : []
+            },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func createProject(_ create: CreateProject, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let name = try jsonLiteral(create.name)
+        let folder = try jsonLiteral(create.folder)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            name: \(name),
+            folder: \(folder),
+            singleton: \(create.singleton ? "true" : "false"),
+            onHold: \(create.onHold ? "true" : "false"),
+            dryRun: \(create.dryRun ? "true" : "false")
+          };
+
+          function folderForPath(pathStr) {
+            const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
+            if (segments.length === 0) {
+              throw new Error(`Invalid folder path: ${pathStr}`);
+            }
+            const joined = segments.join("/");
+            const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
+            if (exactMatches.length === 1) { return exactMatches[0]; }
+            if (exactMatches.length > 1) {
+              throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
+            }
+            if (segments.length === 1) {
+              const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
+              if (leafMatches.length === 1) { return leafMatches[0]; }
+              if (leafMatches.length > 1) {
+                throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
+              }
+            }
+            throw new Error(`Folder not found: ${pathStr}`);
+          }
+
+          function folderAllowedByPrivacyScope(folder) {
+            if (!privacyScope) { return true; }
+            if (!folder) { return false; }
+            return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, project: input, meta: { privacyScope } }, null, 2);
+          }
+
+          const existing = flattenedProjects.byName(input.name);
+          if (existing) {
+            throw new Error(`Project already exists: ${input.name}`);
+          }
+
+          let folder = null;
+          if (input.folder !== null) {
+            folder = folderForPath(input.folder);
+            if (!folderAllowedByPrivacyScope(folder)) {
+              throw new Error(`Destination folder not available in current privacy scope: ${input.folder}`);
+            }
+          } else if (privacyScope) {
+            throw new Error(`Creating a project at the top level is not allowed in the current privacy scope`);
+          }
+
+          const destination = folder ? folder.ending : library.ending;
+          const project = new Project(input.name, destination);
+
+          if (input.singleton) {
+            project.sequential = false;
+            project.containsSingletonActions = true;
+          }
+          if (input.onHold) { project.status = Project.Status.onHold; }
+
+          return JSON.stringify({
+            project: {
+              id: project.id.primaryKey,
+              name: project.name,
+              folder: folder ? folderPath(folder) : [],
+              singleton: project.containsSingletonActions,
+              status: project.status.name
             },
             meta: { privacyScope }
           }, null, 2);

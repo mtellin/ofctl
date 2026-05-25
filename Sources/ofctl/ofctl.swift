@@ -30,6 +30,8 @@ struct OFCTL {
                 print(try client.updateProjectStatus(update))
             case .projectMove(let move):
                 print(try client.moveProject(move))
+            case .projectCreate(let create):
+                print(try client.createProject(create))
             }
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))

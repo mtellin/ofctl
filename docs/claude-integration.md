@@ -28,6 +28,7 @@ The command surface is intentionally narrow:
 - `add-group` for action group creation
 - `update` for controlled edits
 - `project-status` for controlled project state changes
+- `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 
 This is easier to review and approve than general-purpose application
 automation or a full OmniFocus MCP server.
@@ -245,17 +246,8 @@ ofctl project-move "$PROJECT_NAME" --to-folder Work --dry-run
 
 ## Known Limitations
 
-`ofctl` cannot create OmniFocus folders or single-action list projects.
-`ofctl add --project NAME` creates a regular parallel project. To create a
-folder inside another folder, or to set a project as a single-action list, use
-JXA (`osascript -l JavaScript`) for structure creation, then send OmniAutomation
-JavaScript via Apple Events to set `containsSingletonActions = true`. See the
-user guide "Creating Folders and Single-Action List Projects" section for the
-full workflow and a reusable Swift runner.
-
-Note: `project.singleton = true` in OmniAutomation reads back as true but does
-not change the project type in the OmniFocus UI. Always use
-`project.containsSingletonActions = true` instead.
+`ofctl` cannot create OmniFocus folders. To create a subfolder inside an
+existing folder, use JXA (`osascript -l JavaScript`).
 
 Repeated `--tag` filters use AND semantics by default. Use `--tag-mode any`
 when a query should match any listed tag.

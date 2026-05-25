@@ -620,6 +620,38 @@ import Testing
     ))))
 }
 
+@Test func parsesProjectCreate() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-create", "Rubrik Next GitHub",
+        "--folder", "Work",
+        "--singleton",
+    ])
+
+    #expect(options == CommandLineOptions(command: .projectCreate(CreateProject(
+        name: "Rubrik Next GitHub",
+        folder: "Work",
+        singleton: true,
+        onHold: false,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesProjectCreateOnHold() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-create", "Someday Inbox",
+        "--on-hold",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .projectCreate(CreateProject(
+        name: "Someday Inbox",
+        folder: nil,
+        singleton: false,
+        onHold: true,
+        dryRun: true
+    ))))
+}
+
 @Test func workPrivacyScopeActivatesFromEnvironmentHostnames() {
     #expect(PrivacyScope.fromEnvironment(
         ["OFCTL_WORK_HOSTNAMES": "office-mbp, other-host"],
