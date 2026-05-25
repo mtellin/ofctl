@@ -76,6 +76,10 @@ public struct OmniFocusClient {
     public func createProject(_ create: CreateProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.createProject(create, privacyScope: privacyScope))
     }
+
+    public func createFolder(_ create: CreateFolder) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.createFolder(create, privacyScope: privacyScope))
+    }
 }
 
 enum OmniJavaScript {
@@ -788,6 +792,7 @@ enum OmniJavaScript {
         (() => {
           \(privacy)
           \(taskSerializationSupport)
+          \(folderSupport)
 
           const input = {
             project: \(project),
@@ -801,35 +806,6 @@ enum OmniJavaScript {
               throw new Error(`Project not found: ${name}`);
             }
             return project;
-          }
-
-          function folderForPath(pathStr) {
-            const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
-            if (segments.length === 0) {
-              throw new Error(`Invalid folder path: ${pathStr}`);
-            }
-            const joined = segments.join("/");
-            // exact full-path match
-            const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
-            if (exactMatches.length === 1) { return exactMatches[0]; }
-            if (exactMatches.length > 1) {
-              throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
-            }
-            // leaf-name fallback (single segment only)
-            if (segments.length === 1) {
-              const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
-              if (leafMatches.length === 1) { return leafMatches[0]; }
-              if (leafMatches.length > 1) {
-                throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
-              }
-            }
-            throw new Error(`Folder not found: ${pathStr}`);
-          }
-
-          function folderAllowedByPrivacyScope(folder) {
-            if (!privacyScope) { return true; }
-            if (!folder) { return false; }
-            return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
           }
 
           const project = projectNamed(input.project);
@@ -873,6 +849,7 @@ enum OmniJavaScript {
         (() => {
           \(privacy)
           \(taskSerializationSupport)
+          \(folderSupport)
 
           const input = {
             name: \(name),
@@ -881,33 +858,6 @@ enum OmniJavaScript {
             onHold: \(create.onHold ? "true" : "false"),
             dryRun: \(create.dryRun ? "true" : "false")
           };
-
-          function folderForPath(pathStr) {
-            const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
-            if (segments.length === 0) {
-              throw new Error(`Invalid folder path: ${pathStr}`);
-            }
-            const joined = segments.join("/");
-            const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
-            if (exactMatches.length === 1) { return exactMatches[0]; }
-            if (exactMatches.length > 1) {
-              throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
-            }
-            if (segments.length === 1) {
-              const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
-              if (leafMatches.length === 1) { return leafMatches[0]; }
-              if (leafMatches.length > 1) {
-                throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
-              }
-            }
-            throw new Error(`Folder not found: ${pathStr}`);
-          }
-
-          function folderAllowedByPrivacyScope(folder) {
-            if (!privacyScope) { return true; }
-            if (!folder) { return false; }
-            return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
-          }
 
           if (input.dryRun) {
             return JSON.stringify({ dryRun: true, project: input, meta: { privacyScope } }, null, 2);
@@ -951,6 +901,52 @@ enum OmniJavaScript {
         """
     }
 
+    static func createFolder(_ create: CreateFolder, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let name = try jsonLiteral(create.name)
+        let parent = try jsonLiteral(create.parent)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+          \(folderSupport)
+
+          const input = {
+            name: \(name),
+            parent: \(parent),
+            dryRun: \(create.dryRun ? "true" : "false")
+          };
+
+          if (input.dryRun) {
+            return JSON.stringify({ dryRun: true, folder: input, meta: { privacyScope } }, null, 2);
+          }
+
+          let parentFolder = null;
+          if (input.parent !== null) {
+            parentFolder = folderForPath(input.parent);
+            if (!folderAllowedByPrivacyScope(parentFolder)) {
+              throw new Error(`Destination folder not available in current privacy scope: ${input.parent}`);
+            }
+          } else if (privacyScope) {
+            throw new Error(`Creating a folder at the top level is not allowed in the current privacy scope`);
+          }
+
+          const destination = parentFolder ? parentFolder.ending : library.ending;
+          const folder = new Folder(input.name, destination);
+
+          return JSON.stringify({
+            folder: {
+              id: folder.id.primaryKey,
+              name: folder.name,
+              path: folderPath(folder)
+            },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
     private static func jsonLiteral<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
         let data = try encoder.encode(value)
@@ -984,6 +980,35 @@ enum OmniJavaScript {
         """
     }
 }
+
+private let folderSupport = #"""
+function folderForPath(pathStr) {
+  const segments = pathStr.split("/").map(s => s.trim()).filter(s => s.length > 0);
+  if (segments.length === 0) {
+    throw new Error(`Invalid folder path: ${pathStr}`);
+  }
+  const joined = segments.join("/");
+  const exactMatches = flattenedFolders.filter(f => folderPath(f).join("/") === joined);
+  if (exactMatches.length === 1) { return exactMatches[0]; }
+  if (exactMatches.length > 1) {
+    throw new Error(`Ambiguous folder path: ${pathStr} — use a more specific path`);
+  }
+  if (segments.length === 1) {
+    const leafMatches = flattenedFolders.filter(f => f.name === segments[0]);
+    if (leafMatches.length === 1) { return leafMatches[0]; }
+    if (leafMatches.length > 1) {
+      throw new Error(`Ambiguous folder name: ${pathStr} — use a path like Parent/${pathStr}`);
+    }
+  }
+  throw new Error(`Folder not found: ${pathStr}`);
+}
+
+function folderAllowedByPrivacyScope(folder) {
+  if (!privacyScope) { return true; }
+  if (!folder) { return false; }
+  return folderPath(folder).some(name => privacyAllowedFolderNames.has(name));
+}
+"""#
 
 private let markdownNoteSupport = #"""
 function escapeMarkdownText(value) {

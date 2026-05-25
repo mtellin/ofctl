@@ -25,6 +25,7 @@ public struct CommandLineOptions: Equatable {
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
         case projectCreate(CreateProject)
+        case folderCreate(CreateFolder)
     }
 
     public var command: Command
@@ -122,6 +123,12 @@ public struct CreateProject: Equatable {
     public var dryRun: Bool
 }
 
+public struct CreateFolder: Equatable {
+    public var name: String
+    public var parent: String?
+    public var dryRun: Bool
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -159,6 +166,7 @@ public enum CLI {
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
+      ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -197,6 +205,8 @@ public enum CLI {
             return try CommandLineOptions(command: .projectMove(parseMoveProject(args)))
         case "project-create":
             return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
+        case "folder-create":
+            return try CommandLineOptions(command: .folderCreate(parseCreateFolder(args)))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -624,6 +634,29 @@ public enum CLI {
         }
 
         return CreateProject(name: name, folder: folder, singleton: singleton, onHold: onHold, dryRun: dryRun)
+    }
+
+    private static func parseCreateFolder(_ args: [String]) throws -> CreateFolder {
+        var parser = OptionParser(args)
+        guard let name = parser.next(), !name.hasPrefix("--") else {
+            throw CLIError.usage("folder-create requires a folder name\n\n\(help)")
+        }
+
+        var parent: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--parent":
+                parent = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for folder-create: \(arg)")
+            }
+        }
+
+        return CreateFolder(name: name, parent: parent, dryRun: dryRun)
     }
 
     private static func nullableValue(after option: String, parser: inout OptionParser) throws -> String? {

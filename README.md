@@ -174,6 +174,14 @@ Dry-run any write first:
 ofctl add "Ask Taylor about launch date" --tag "Taylor Morgan" --dry-run
 ```
 
+Create folders:
+
+```sh
+ofctl folder-create "Home Maintenance"
+ofctl folder-create "Garden" --parent "Home Maintenance"
+ofctl folder-create "Work Projects" --dry-run
+```
+
 ## Documentation
 
 - [User Guide](docs/user-guide.md): complete command reference and examples.
@@ -203,6 +211,8 @@ ofctl add "Ask Taylor about launch date" --tag "Taylor Morgan" --dry-run
   level with `--to-folder none`).
 - `ofctl project-create`: create a new project, optionally in a folder and
   optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`).
+- `ofctl folder-create`: create a new OmniFocus folder, optionally nested
+  inside an existing parent folder.
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created

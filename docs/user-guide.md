@@ -724,6 +724,36 @@ Use `--dry-run` to preview without mutating:
 ofctl project-move "Home Maintenance" --to-folder Home --dry-run
 ```
 
+## folder-create
+
+Creates a new OmniFocus folder, optionally nested inside an existing parent.
+
+```sh
+ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
+```
+
+Create a top-level folder:
+
+```sh
+ofctl folder-create "Home Maintenance"
+```
+
+Create a nested folder (parent resolved by name or slash-delimited path):
+
+```sh
+ofctl folder-create "Garden" --parent "Home Maintenance"
+ofctl folder-create "Sprints" --parent "Work/Q3 Planning"
+```
+
+Use `--dry-run` to preview without mutating:
+
+```sh
+ofctl folder-create "Work Projects" --dry-run
+```
+
+The returned JSON includes `folder.id`, `folder.name`, and `folder.path` (the
+full path as an array of folder names from root to the new folder).
+
 ## Common Queries
 
 Person agenda:

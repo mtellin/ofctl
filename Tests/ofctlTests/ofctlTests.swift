@@ -652,6 +652,36 @@ import Testing
     ))))
 }
 
+@Test func parsesFolderCreate() throws {
+    let options = try CLI.parse([
+        "ofctl", "folder-create", "Home Maintenance",
+        "--parent", "Personal",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .folderCreate(CreateFolder(
+        name: "Home Maintenance",
+        parent: "Personal",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesFolderCreateTopLevel() throws {
+    let options = try CLI.parse(["ofctl", "folder-create", "Work Projects"])
+
+    #expect(options == CommandLineOptions(command: .folderCreate(CreateFolder(
+        name: "Work Projects",
+        parent: nil,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesFolderCreateRequiresName() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "folder-create"])
+    }
+}
+
 @Test func workPrivacyScopeActivatesFromEnvironmentHostnames() {
     #expect(PrivacyScope.fromEnvironment(
         ["OFCTL_WORK_HOSTNAMES": "office-mbp, other-host"],
@@ -705,6 +735,13 @@ import Testing
     )
     #expect(moveScript.contains("assertProjectAvailableInPrivacyScope(project"))
     #expect(moveScript.contains("folderAllowedByPrivacyScope(folder)"))
+
+    let createFolderScript = try OmniJavaScript.createFolder(
+        CreateFolder(name: "Work Projects", parent: "Work", dryRun: false),
+        privacyScope: .work
+    )
+    #expect(createFolderScript.contains("folderAllowedByPrivacyScope(parentFolder)"))
+    #expect(createFolderScript.contains("Creating a folder at the top level is not allowed in the current privacy scope"))
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {

@@ -29,6 +29,7 @@ The command surface is intentionally narrow:
 - `update` for controlled edits
 - `project-status` for controlled project state changes
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
+- `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
 
 This is easier to review and approve than general-purpose application
 automation or a full OmniFocus MCP server.
@@ -246,9 +247,6 @@ ofctl project-move "$PROJECT_NAME" --to-folder Work --dry-run
 
 ## Known Limitations
 
-`ofctl` cannot create OmniFocus folders. To create a subfolder inside an
-existing folder, use JXA (`osascript -l JavaScript`).
-
 Repeated `--tag` filters use AND semantics by default. Use `--tag-mode any`
 when a query should match any listed tag.
 
@@ -258,9 +256,6 @@ tasks with `ofctl tasks --repeat-rule any`, query non-repeating tasks with
 --repeat-rule none`. Use `--repeat-method fixed` for a regular fixed schedule
 that should not drift when completed late. `--repeat-method due` means due again
 after completion, and `--repeat-method defer` means defer again after completion.
-
-There are no bulk update commands. Claude should update tasks one at a time and
-report each result.
 
 ## Permission Model
 

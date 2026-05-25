@@ -32,6 +32,8 @@ struct OFCTL {
                 print(try client.moveProject(move))
             case .projectCreate(let create):
                 print(try client.createProject(create))
+            case .folderCreate(let create):
+                print(try client.createFolder(create))
             }
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
