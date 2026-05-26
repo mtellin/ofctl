@@ -27,6 +27,7 @@ The command surface is intentionally narrow:
 - `add` for task creation
 - `add-group` for action group creation
 - `update` for controlled edits
+- `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
@@ -230,6 +231,19 @@ Batch updates (multiple IDs apply the same mutation to all):
 ofctl update "$ID1" "$ID2" "$ID3" --add-tag "Waiting On" --dry-run
 ofctl update "$ID1" "$ID2" --complete --dry-run
 ```
+
+Controlled task ordering:
+
+```sh
+ofctl task-move "$TASK_ID" --before "$TARGET_TASK_ID" --dry-run
+ofctl task-move "$TASK_ID" --after "$TARGET_TASK_ID" --dry-run
+ofctl task-move "$TASK_ID" --project "$PROJECT_NAME" --position beginning --dry-run
+ofctl task-move "$TASK_ID" --parent "$ACTION_GROUP_TASK_ID" --dry-run
+```
+
+Use `task-move` instead of telling the user to drag tasks manually. Use
+`--before` when an item must appear above a known reference task, such as a
+README or setup task.
 
 Controlled action group workflows:
 

@@ -611,6 +611,83 @@ import Testing
     ))))
 }
 
+@Test func parsesTaskMoveBeforeTarget() throws {
+    let options = try CLI.parse([
+        "ofctl", "task-move", "id1", "id2",
+        "--before", "target",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .taskMove(MoveTasks(
+        ids: ["id1", "id2"],
+        destination: .before("target"),
+        position: .ending,
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTaskMoveAfterTarget() throws {
+    let options = try CLI.parse(["ofctl", "task-move", "id1", "--after", "target"])
+
+    #expect(options == CommandLineOptions(command: .taskMove(MoveTasks(
+        ids: ["id1"],
+        destination: .after("target"),
+        position: .ending,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTaskMoveToProjectBeginning() throws {
+    let options = try CLI.parse([
+        "ofctl", "task-move", "id1",
+        "--project", "Product Launch",
+        "--position", "beginning",
+    ])
+
+    #expect(options == CommandLineOptions(command: .taskMove(MoveTasks(
+        ids: ["id1"],
+        destination: .project("Product Launch"),
+        position: .beginning,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTaskMoveToParentAndInbox() throws {
+    let parent = try CLI.parse(["ofctl", "task-move", "id1", "--parent", "parent123"])
+    #expect(parent == CommandLineOptions(command: .taskMove(MoveTasks(
+        ids: ["id1"],
+        destination: .parent("parent123"),
+        position: .ending,
+        dryRun: false
+    ))))
+
+    let inbox = try CLI.parse(["ofctl", "task-move", "id1", "--inbox", "--position", "beginning"])
+    #expect(inbox == CommandLineOptions(command: .taskMove(MoveTasks(
+        ids: ["id1"],
+        destination: .inbox,
+        position: .beginning,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesTaskMoveValidation() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-move"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-move", "id1"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-move", "id1", "--before", "target", "--after", "other"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-move", "id1", "--before", "target", "--position", "beginning"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-move", "id1", "--project", "Product", "--position", "middle"])
+    }
+}
+
 @Test func parsesProjectStatusUpdate() throws {
     let options = try CLI.parse([
         "ofctl", "project-status", "Product Launch",
@@ -966,6 +1043,10 @@ import Testing
 @Test func workPrivacyScopeGuardsWrites() throws {
     let addScript = try OmniJavaScript.addTask(defaultAddTask(), privacyScope: .work)
     let updateScript = try OmniJavaScript.updateTask(defaultUpdateTask(), privacyScope: .work)
+    let moveTasksScript = try OmniJavaScript.moveTasks(
+        MoveTasks(ids: ["abc123"], destination: .before("def456"), position: .ending, dryRun: false),
+        privacyScope: .work
+    )
     let projectScript = try OmniJavaScript.updateProjectStatus(
         UpdateProjectStatus(project: "Product Launch", status: .onHold, dryRun: true),
         privacyScope: .work
@@ -975,6 +1056,9 @@ import Testing
     #expect(addScript.contains("assertTaskAvailableInPrivacyScope(parentTask"))
     #expect(updateScript.contains("!t || !taskAllowedByPrivacyScope(t)"))
     #expect(updateScript.contains("!dryRunProject.project || !projectAllowedByPrivacyScope(dryRunProject.project)"))
+    #expect(moveTasksScript.contains("!task || !taskAllowedByPrivacyScope(task)"))
+    #expect(moveTasksScript.contains("assertNoSourceTargetConflict(resolvedTasks, targetTask"))
+    #expect(moveTasksScript.contains("moveTasks(resolvedTasks, destinationLocation)"))
     #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
 
     let moveScript = try OmniJavaScript.moveProject(

@@ -65,6 +65,10 @@ public struct OmniFocusClient {
         try runner.runOmniJavaScript(OmniJavaScript.updateTask(task, privacyScope: privacyScope))
     }
 
+    public func moveTasks(_ move: MoveTasks) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.moveTasks(move, privacyScope: privacyScope))
+    }
+
     public func updateProjectStatus(_ update: UpdateProjectStatus) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.updateProjectStatus(update, privacyScope: privacyScope))
     }
@@ -753,6 +757,147 @@ enum OmniJavaScript {
               privacyScope,
               createdProject: projectCreated
             }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func moveTasks(_ move: MoveTasks, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let ids = try jsonLiteral(move.ids)
+        let destinationKind: String
+        let destinationTarget: String?
+        switch move.destination {
+        case .before(let id):
+            destinationKind = "before"
+            destinationTarget = id
+        case .after(let id):
+            destinationKind = "after"
+            destinationTarget = id
+        case .project(let name):
+            destinationKind = "project"
+            destinationTarget = name
+        case .parent(let id):
+            destinationKind = "parent"
+            destinationTarget = id
+        case .inbox:
+            destinationKind = "inbox"
+            destinationTarget = nil
+        }
+        let kind = try jsonLiteral(destinationKind)
+        let target = try jsonLiteral(destinationTarget)
+        let position = try jsonLiteral(move.position.rawValue)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            ids: \(ids),
+            destination: {
+              kind: \(kind),
+              target: \(target),
+              position: \(position)
+            },
+            dryRun: \(move.dryRun ? "true" : "false")
+          };
+
+          function taskById(id, role) {
+            const task = Task.byIdentifier(id);
+            if (!task || !taskAllowedByPrivacyScope(task)) {
+              throw new Error(`${role} task not found or not available in current privacy scope: ${id}`);
+            }
+            return task;
+          }
+
+          function isDescendantOf(task, possibleAncestor) {
+            let current = task.parent;
+            while (current) {
+              if (current.id.primaryKey === possibleAncestor.id.primaryKey) { return true; }
+              current = current.parent;
+            }
+            return false;
+          }
+
+          function assertNoSourceTargetConflict(resolvedTasks, targetTask, label) {
+            if (!targetTask) { return; }
+            resolvedTasks.forEach(task => {
+              if (task.id.primaryKey === targetTask.id.primaryKey) {
+                throw new Error(`Cannot move a task ${label} itself: ${task.id.primaryKey}`);
+              }
+              if (isDescendantOf(targetTask, task)) {
+                throw new Error(`Cannot move a task ${label} its own descendant: ${task.name}`);
+              }
+            });
+          }
+
+          const resolvedTasks = input.ids.map(id => taskById(id, "Source"));
+          const sourceIds = new Set(resolvedTasks.map(task => task.id.primaryKey));
+          if (sourceIds.size !== resolvedTasks.length) {
+            throw new Error("task-move source task ids must be unique");
+          }
+
+          let destinationLocation;
+          let destinationInfo;
+
+          switch (input.destination.kind) {
+          case "before": {
+            const targetTask = taskById(input.destination.target, "Target");
+            assertNoSourceTargetConflict(resolvedTasks, targetTask, "before");
+            destinationLocation = targetTask.before;
+            destinationInfo = { kind: "before", task: { id: targetTask.id.primaryKey, name: targetTask.name } };
+            break;
+          }
+          case "after": {
+            const targetTask = taskById(input.destination.target, "Target");
+            assertNoSourceTargetConflict(resolvedTasks, targetTask, "after");
+            destinationLocation = targetTask.after;
+            destinationInfo = { kind: "after", task: { id: targetTask.id.primaryKey, name: targetTask.name } };
+            break;
+          }
+          case "project": {
+            const project = flattenedProjects.byName(input.destination.target);
+            if (!project) { throw new Error(`Project not found: ${input.destination.target}`); }
+            assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.destination.target}`);
+            destinationLocation = input.destination.position === "beginning" ? project.beginning : project.ending;
+            destinationInfo = { kind: "project", project: { id: project.id.primaryKey, name: project.name }, position: input.destination.position };
+            break;
+          }
+          case "parent": {
+            const parentTask = taskById(input.destination.target, "Parent");
+            assertNoSourceTargetConflict(resolvedTasks, parentTask, "under");
+            destinationLocation = input.destination.position === "beginning" ? parentTask.beginning : parentTask.ending;
+            destinationInfo = { kind: "parent", task: { id: parentTask.id.primaryKey, name: parentTask.name }, position: input.destination.position };
+            break;
+          }
+          case "inbox": {
+            if (privacyScope && !privacyAllowInbox) {
+              throw new Error("Inbox is not available in current privacy scope");
+            }
+            destinationLocation = input.destination.position === "beginning" ? inbox.beginning : inbox.ending;
+            destinationInfo = { kind: "inbox", position: input.destination.position };
+            break;
+          }
+          default:
+            throw new Error(`Unsupported task move destination: ${input.destination.kind}`);
+          }
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              tasks: resolvedTasks.map(task => ({ id: task.id.primaryKey, name: task.name })),
+              destination: destinationInfo,
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          moveTasks(resolvedTasks, destinationLocation);
+
+          return JSON.stringify({
+            tasks: resolvedTasks.map(task => serializeTask(task, false, false)),
+            destination: destinationInfo,
+            meta: { privacyScope }
           }, null, 2);
         })();
         """

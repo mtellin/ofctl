@@ -654,6 +654,38 @@ ofctl update ID1 ID2 ID3 --complete --dry-run
 The response contains a `tasks` array with one entry per ID. All mutations apply
 to every task — use `--dry-run` first when touching more than one task.
 
+## Move Tasks
+
+Use `task-move` when order matters, or when moving a task into a project,
+action group, or inbox without changing other metadata.
+
+Move a task before or after another task:
+
+```sh
+ofctl task-move TASK_ID --before TARGET_TASK_ID --dry-run
+ofctl task-move TASK_ID --after TARGET_TASK_ID
+```
+
+Move several tasks together, preserving the ID order supplied on the command
+line:
+
+```sh
+ofctl task-move ID1 ID2 ID3 --before TARGET_TASK_ID --dry-run
+```
+
+Move to a container:
+
+```sh
+ofctl task-move TASK_ID --project "Product Launch"
+ofctl task-move TASK_ID --project "Product Launch" --position beginning
+ofctl task-move TASK_ID --parent ACTION_GROUP_TASK_ID
+ofctl task-move TASK_ID --inbox --position beginning
+```
+
+`--position` accepts `beginning` or `ending` and defaults to `ending`. It only
+applies with `--project`, `--parent`, or `--inbox`; `--before` and `--after`
+already define an exact insertion point.
+
 ## Creating Projects
 
 ### Regular project

@@ -168,6 +168,15 @@ ofctl update TASK_ID --flag
 ofctl update TASK_ID --no-flag
 ```
 
+Reorder or move tasks:
+
+```sh
+ofctl task-move TASK_ID --before README_TASK_ID --dry-run
+ofctl task-move TASK_ID --before README_TASK_ID
+ofctl task-move TASK_ID --project "Product Launch" --position beginning
+ofctl task-move TASK_ID --parent ACTION_GROUP_TASK_ID
+```
+
 Dry-run any write first:
 
 ```sh
@@ -236,6 +245,8 @@ ofctl project-delete "Home Maintenance"
 - `ofctl update`: update one or more tasks by ID — name, project, tags, dates,
   repeat rule, duration, notes, completion state, dropped state, flag state,
   action group settings, and skipped repeating occurrences.
+- `ofctl task-move`: reorder one or more tasks before/after another task, or
+  move them to the beginning/end of a project, action group, or inbox.
 - `ofctl project-status`: set a project to active, on hold, completed, or
   dropped.
 - `ofctl project-move`: move a project into a folder (or to the library top

@@ -22,6 +22,7 @@ public struct CommandLineOptions: Equatable {
         case add(AddTask)
         case addGroup(AddTask)
         case update(UpdateTask)
+        case taskMove(MoveTasks)
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
         case projectCreate(CreateProject)
@@ -124,6 +125,26 @@ public struct MoveProject: Equatable {
     public var dryRun: Bool
 }
 
+public struct MoveTasks: Equatable {
+    public var ids: [String]
+    public var destination: TaskMoveDestination
+    public var position: TaskMovePosition
+    public var dryRun: Bool
+}
+
+public enum TaskMoveDestination: Equatable {
+    case before(String)
+    case after(String)
+    case project(String)
+    case parent(String)
+    case inbox
+}
+
+public enum TaskMovePosition: String, Equatable {
+    case beginning
+    case ending
+}
+
 public struct CreateProject: Equatable {
     public var name: String
     public var folder: String?
@@ -224,6 +245,7 @@ public enum CLI {
       ofctl add NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
       ofctl add-group NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
       ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
+      ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
@@ -269,6 +291,8 @@ public enum CLI {
             return try CommandLineOptions(command: .addGroup(parseAddTask(args, actionGroup: true)))
         case "update":
             return try CommandLineOptions(command: .update(parseUpdateTask(args)))
+        case "task-move":
+            return try CommandLineOptions(command: .taskMove(parseMoveTasks(args)))
         case "project-status":
             return try CommandLineOptions(command: .projectStatus(parseUpdateProjectStatus(args)))
         case "project-move":
@@ -642,6 +666,73 @@ public enum CLI {
             throw CLIError.usage("Unsupported repeat method: \(value)")
         }
         return method
+    }
+
+    private static func parseMoveTasks(_ args: [String]) throws -> MoveTasks {
+        var parser = OptionParser(args)
+        var ids: [String] = []
+
+        while let arg = parser.peek(), !arg.hasPrefix("--") {
+            _ = parser.next()
+            ids.append(arg)
+        }
+
+        guard !ids.isEmpty else {
+            throw CLIError.usage("task-move requires at least one task id\n\n\(help)")
+        }
+
+        var destination: TaskMoveDestination?
+        var position = TaskMovePosition.ending
+        var positionWasSet = false
+        var dryRun = false
+
+        func setDestination(_ next: TaskMoveDestination) throws {
+            guard destination == nil else {
+                throw CLIError.usage("task-move accepts exactly one destination option")
+            }
+            destination = next
+        }
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--before":
+                try setDestination(.before(try parser.value(after: arg)))
+            case "--after":
+                try setDestination(.after(try parser.value(after: arg)))
+            case "--project":
+                try setDestination(.project(try parser.value(after: arg)))
+            case "--parent":
+                try setDestination(.parent(try parser.value(after: arg)))
+            case "--inbox":
+                try setDestination(.inbox)
+            case "--position":
+                let value = try parser.value(after: arg)
+                guard let parsed = TaskMovePosition(rawValue: value) else {
+                    throw CLIError.usage("Unsupported task-move position: \(value)")
+                }
+                position = parsed
+                positionWasSet = true
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for task-move: \(arg)")
+            }
+        }
+
+        guard let destination else {
+            throw CLIError.usage("task-move requires --before, --after, --project, --parent, or --inbox")
+        }
+
+        if positionWasSet {
+            switch destination {
+            case .before, .after:
+                throw CLIError.usage("--position can only be used with --project, --parent, or --inbox")
+            case .project, .parent, .inbox:
+                break
+            }
+        }
+
+        return MoveTasks(ids: ids, destination: destination, position: position, dryRun: dryRun)
     }
 
     private static func parseUpdateProjectStatus(_ args: [String]) throws -> UpdateProjectStatus {
