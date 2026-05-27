@@ -177,6 +177,15 @@ ofctl task-move TASK_ID --project "Product Launch" --position beginning
 ofctl task-move TASK_ID --parent ACTION_GROUP_TASK_ID
 ```
 
+Rename tasks and projects:
+
+```sh
+ofctl task-rename TASK_ID --to "Follow up with Taylor" --dry-run
+ofctl task-rename TASK_ID --to "Follow up with Taylor"
+ofctl project-rename "Home Maintenance" --to "House Maintenance" --dry-run
+ofctl project-rename "Home Maintenance" --to "House Maintenance"
+```
+
 Dry-run any write first:
 
 ```sh
@@ -245,12 +254,16 @@ ofctl project-delete "Home Maintenance"
 - `ofctl update`: update one or more tasks by ID — name, project, tags, dates,
   repeat rule, duration, notes, completion state, dropped state, flag state,
   action group settings, and skipped repeating occurrences.
+- `ofctl task-rename`: rename one task by ID using OmniFocus's native task
+  name property.
 - `ofctl task-move`: reorder one or more tasks before/after another task, or
   move them to the beginning/end of a project, action group, or inbox.
 - `ofctl project-status`: set a project to active, on hold, completed, or
   dropped.
 - `ofctl project-move`: move a project into a folder (or to the library top
   level with `--to-folder none`).
+- `ofctl project-rename`: rename a project using OmniFocus's native project
+  name property.
 - `ofctl project-create`: create a new project, optionally in a folder and
   optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`).
 - `ofctl folder-create`: create a new OmniFocus folder, optionally nested

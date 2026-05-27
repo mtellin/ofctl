@@ -27,8 +27,10 @@ The command surface is intentionally narrow:
 - `add` for task creation
 - `add-group` for action group creation
 - `update` for controlled edits
+- `task-rename TASK_ID --to NEW_NAME` for task-only renames
 - `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes
+- `project-rename PROJECT_NAME --to NEW_NAME` for native project renames
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
 - `tags` to list all tags with paths (not folder-scoped; always returns all tags)

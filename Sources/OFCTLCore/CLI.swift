@@ -22,9 +22,11 @@ public struct CommandLineOptions: Equatable {
         case add(AddTask)
         case addGroup(AddTask)
         case update(UpdateTask)
+        case taskRename(RenameTask)
         case taskMove(MoveTasks)
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
+        case projectRename(RenameProject)
         case projectCreate(CreateProject)
         case folderCreate(CreateFolder)
         case tags(TagsQuery)
@@ -113,6 +115,12 @@ public struct UpdateTask: Equatable {
     public var dryRun: Bool
 }
 
+public struct RenameTask: Equatable {
+    public var id: String
+    public var newName: String
+    public var dryRun: Bool
+}
+
 public struct UpdateProjectStatus: Equatable {
     public var project: String
     public var status: ProjectStatus
@@ -122,6 +130,12 @@ public struct UpdateProjectStatus: Equatable {
 public struct MoveProject: Equatable {
     public var project: String
     public var folder: String?  // nil = move to library top level (--to-folder none)
+    public var dryRun: Bool
+}
+
+public struct RenameProject: Equatable {
+    public var project: String
+    public var newName: String
     public var dryRun: Bool
 }
 
@@ -245,9 +259,11 @@ public enum CLI {
       ofctl add NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
       ofctl add-group NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
       ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
+      ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
+      ofctl project-rename PROJECT_NAME --to NEW_NAME [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
       ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
       ofctl tags [--format json|text]
@@ -291,12 +307,16 @@ public enum CLI {
             return try CommandLineOptions(command: .addGroup(parseAddTask(args, actionGroup: true)))
         case "update":
             return try CommandLineOptions(command: .update(parseUpdateTask(args)))
+        case "task-rename":
+            return try CommandLineOptions(command: .taskRename(parseRenameTask(args)))
         case "task-move":
             return try CommandLineOptions(command: .taskMove(parseMoveTasks(args)))
         case "project-status":
             return try CommandLineOptions(command: .projectStatus(parseUpdateProjectStatus(args)))
         case "project-move":
             return try CommandLineOptions(command: .projectMove(parseMoveProject(args)))
+        case "project-rename":
+            return try CommandLineOptions(command: .projectRename(parseRenameProject(args)))
         case "project-create":
             return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
         case "folder-create":
@@ -735,6 +755,33 @@ public enum CLI {
         return MoveTasks(ids: ids, destination: destination, position: position, dryRun: dryRun)
     }
 
+    private static func parseRenameTask(_ args: [String]) throws -> RenameTask {
+        var parser = OptionParser(args)
+        guard let id = parser.next(), !id.hasPrefix("--") else {
+            throw CLIError.usage("task-rename requires a task id\n\n\(help)")
+        }
+
+        var newName: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--to":
+                newName = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for task-rename: \(arg)")
+            }
+        }
+
+        guard let newName else {
+            throw CLIError.usage("task-rename requires --to NEW_NAME")
+        }
+
+        return RenameTask(id: id, newName: newName, dryRun: dryRun)
+    }
+
     private static func parseUpdateProjectStatus(_ args: [String]) throws -> UpdateProjectStatus {
         var parser = OptionParser(args)
         guard let project = parser.next(), !project.hasPrefix("--") else {
@@ -791,6 +838,33 @@ public enum CLI {
         }
 
         return MoveProject(project: project, folder: folder, dryRun: dryRun)
+    }
+
+    private static func parseRenameProject(_ args: [String]) throws -> RenameProject {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-rename requires a project name\n\n\(help)")
+        }
+
+        var newName: String?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--to":
+                newName = try parser.value(after: arg)
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-rename: \(arg)")
+            }
+        }
+
+        guard let newName else {
+            throw CLIError.usage("project-rename requires --to NEW_NAME")
+        }
+
+        return RenameProject(project: project, newName: newName, dryRun: dryRun)
     }
 
     private static func parseCreateProject(_ args: [String]) throws -> CreateProject {

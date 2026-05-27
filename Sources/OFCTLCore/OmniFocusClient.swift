@@ -65,6 +65,10 @@ public struct OmniFocusClient {
         try runner.runOmniJavaScript(OmniJavaScript.updateTask(task, privacyScope: privacyScope))
     }
 
+    public func renameTask(_ rename: RenameTask) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.renameTask(rename, privacyScope: privacyScope))
+    }
+
     public func moveTasks(_ move: MoveTasks) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.moveTasks(move, privacyScope: privacyScope))
     }
@@ -75,6 +79,10 @@ public struct OmniFocusClient {
 
     public func moveProject(_ move: MoveProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.moveProject(move, privacyScope: privacyScope))
+    }
+
+    public func renameProject(_ rename: RenameProject) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.renameProject(rename, privacyScope: privacyScope))
     }
 
     public func createProject(_ create: CreateProject) throws -> String {
@@ -762,6 +770,53 @@ enum OmniJavaScript {
         """
     }
 
+    static func renameTask(_ rename: RenameTask, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let id = try jsonLiteral(rename.id)
+        let newName = try jsonLiteral(rename.newName)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            id: \(id),
+            newName: \(newName),
+            dryRun: \(rename.dryRun ? "true" : "false")
+          };
+
+          const task = Task.byIdentifier(input.id);
+          if (!task || !taskAllowedByPrivacyScope(task)) {
+            throw new Error(`Task not found or not available in current privacy scope: ${input.id}`);
+          }
+
+          const previousName = task.name;
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              task: {
+                id: task.id.primaryKey,
+                name: previousName,
+                newName: input.newName
+              },
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          task.name = input.newName;
+
+          return JSON.stringify({
+            task: serializeTask(task, false, false),
+            meta: {
+              privacyScope,
+              previousName
+            }
+          }, null, 2);
+        })();
+        """
+    }
+
     static func moveTasks(_ move: MoveTasks, privacyScope: PrivacyScope = .unrestricted) throws -> String {
         let ids = try jsonLiteral(move.ids)
         let destinationKind: String
@@ -1014,6 +1069,61 @@ enum OmniJavaScript {
               id: project.id.primaryKey,
               name: project.name,
               folder: folder ? folderPath(folder) : []
+            },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func renameProject(_ rename: RenameProject, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(rename.project)
+        let newName = try jsonLiteral(rename.newName)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            project: \(project),
+            newName: \(newName),
+            dryRun: \(rename.dryRun ? "true" : "false")
+          };
+
+          function projectNamed(name) {
+            const project = flattenedProjects.byName(name);
+            if (!project) {
+              throw new Error(`Project not found: ${name}`);
+            }
+            return project;
+          }
+
+          const project = projectNamed(input.project);
+          assertProjectAvailableInPrivacyScope(project, `Project not found or not available in current privacy scope: ${input.project}`);
+
+          const previousName = project.name;
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              project: {
+                id: project.id.primaryKey,
+                name: previousName,
+                newName: input.newName
+              },
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          project.name = input.newName;
+
+          return JSON.stringify({
+            project: {
+              id: project.id.primaryKey,
+              name: project.name,
+              previousName,
+              folder: projectFolderNamesForProject(project)
             },
             meta: { privacyScope }
           }, null, 2);

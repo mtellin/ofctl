@@ -611,6 +611,26 @@ import Testing
     ))))
 }
 
+@Test func parsesTaskRename() throws {
+    let options = try CLI.parse([
+        "ofctl", "task-rename", "abc123",
+        "--to", "Updated task name",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .taskRename(RenameTask(
+        id: "abc123",
+        newName: "Updated task name",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesTaskRenameRequiresToFlag() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-rename", "abc123"])
+    }
+}
+
 @Test func parsesTaskMoveBeforeTarget() throws {
     let options = try CLI.parse([
         "ofctl", "task-move", "id1", "id2",
@@ -727,6 +747,26 @@ import Testing
         folder: nil,
         dryRun: false
     ))))
+}
+
+@Test func parsesProjectRename() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-rename", "Home Maintenance",
+        "--to", "House Maintenance",
+        "--dry-run",
+    ])
+
+    #expect(options == CommandLineOptions(command: .projectRename(RenameProject(
+        project: "Home Maintenance",
+        newName: "House Maintenance",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesProjectRenameRequiresToFlag() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "project-rename", "Home Maintenance"])
+    }
 }
 
 @Test func parsesProjectCreate() throws {
@@ -1143,6 +1183,22 @@ import Testing
     #expect(updateScript.contains("task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod);"))
     #expect(queryScript.contains("repeatRuleMatches(task, repeatRuleFilter)"))
     #expect(queryScript.contains("repeatRule: repetitionRule ? repetitionRule.ruleString : null"))
+}
+
+@Test func generatedRenameScriptsUseNativeNameAssignment() throws {
+    let taskScript = try OmniJavaScript.renameTask(RenameTask(
+        id: "abc123",
+        newName: "Updated task name",
+        dryRun: false
+    ))
+    let projectScript = try OmniJavaScript.renameProject(RenameProject(
+        project: "Home Maintenance",
+        newName: "House Maintenance",
+        dryRun: false
+    ))
+
+    #expect(taskScript.contains("task.name = input.newName;"))
+    #expect(projectScript.contains("project.name = input.newName;"))
 }
 
 private func defaultTaskQuery() -> TaskQuery {

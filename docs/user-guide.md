@@ -654,6 +654,18 @@ ofctl update ID1 ID2 ID3 --complete --dry-run
 The response contains a `tasks` array with one entry per ID. All mutations apply
 to every task — use `--dry-run` first when touching more than one task.
 
+## Rename A Task
+
+Use `task-rename` when the only intended change is the task name:
+
+```sh
+ofctl task-rename TASK_ID --to "Follow up with Taylor" --dry-run
+ofctl task-rename TASK_ID --to "Follow up with Taylor"
+```
+
+This uses OmniFocus's native task `name` property. `update TASK_ID --name NAME`
+remains available when renaming is part of a broader task update.
+
 ## Move Tasks
 
 Use `task-move` when order matters, or when moving a task into a project,
@@ -765,6 +777,18 @@ Use `--dry-run` to preview without mutating:
 ```sh
 ofctl project-move "Home Maintenance" --to-folder Home --dry-run
 ```
+
+## Rename A Project
+
+Rename an existing project:
+
+```sh
+ofctl project-rename "Home Maintenance" --to "House Maintenance" --dry-run
+ofctl project-rename "Home Maintenance" --to "House Maintenance"
+```
+
+This uses OmniFocus's native project `name` property. It does not recreate the
+project or move its tasks.
 
 ## projects
 

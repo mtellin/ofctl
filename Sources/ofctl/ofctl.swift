@@ -26,12 +26,16 @@ struct OFCTL {
                 print(try client.add(task))
             case .update(let task):
                 print(try client.update(task))
+            case .taskRename(let rename):
+                print(try client.renameTask(rename))
             case .taskMove(let move):
                 print(try client.moveTasks(move))
             case .projectStatus(let update):
                 print(try client.updateProjectStatus(update))
             case .projectMove(let move):
                 print(try client.moveProject(move))
+            case .projectRename(let rename):
+                print(try client.renameProject(rename))
             case .projectCreate(let create):
                 print(try client.createProject(create))
             case .folderCreate(let create):
