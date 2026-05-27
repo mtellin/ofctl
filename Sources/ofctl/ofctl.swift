@@ -36,6 +36,8 @@ struct OFCTL {
                 print(try client.moveProject(move))
             case .projectRename(let rename):
                 print(try client.renameProject(rename))
+            case .projectCompletion(let update):
+                print(try client.updateProjectCompletion(update))
             case .projectCreate(let create):
                 print(try client.createProject(create))
             case .folderCreate(let create):

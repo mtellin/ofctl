@@ -749,6 +749,24 @@ Use `--dry-run` to preview the project status mutation:
 ofctl project-status "Product Launch" --status on-hold --dry-run
 ```
 
+## Project Completion
+
+Set or unset "Complete with last action" on a parallel or sequential project:
+
+```sh
+ofctl project-completion "Product Launch" --complete-with-last-action
+ofctl project-completion "Product Launch" --no-complete-with-last-action
+```
+
+Use `--dry-run` to preview the mutation:
+
+```sh
+ofctl project-completion "Product Launch" --complete-with-last-action --dry-run
+```
+
+This controls OmniFocus's project `completedByChildren` property. It applies to
+parallel and sequential projects, not single-action lists.
+
 ## Move A Project
 
 Move a project into a folder:

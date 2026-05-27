@@ -216,6 +216,7 @@ List and review projects:
 ofctl projects --format text
 ofctl projects --due-for-review --format text
 ofctl projects --folder Work --status active --format text
+ofctl project-completion "Product Launch" --complete-with-last-action --dry-run
 ofctl project-review "Work Notifications" --interval 1w
 ofctl project-review "Work Notifications" --mark-reviewed
 ofctl project-review "Work Notifications" --mark-reviewed --interval 2w --dry-run
@@ -264,6 +265,8 @@ ofctl project-delete "Home Maintenance"
   level with `--to-folder none`).
 - `ofctl project-rename`: rename a project using OmniFocus's native project
   name property.
+- `ofctl project-completion`: set or unset a parallel/sequential project's
+  "Complete with last action" flag.
 - `ofctl project-create`: create a new project, optionally in a folder and
   optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`).
 - `ofctl folder-create`: create a new OmniFocus folder, optionally nested

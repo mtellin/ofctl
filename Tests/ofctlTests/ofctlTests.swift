@@ -769,6 +769,37 @@ import Testing
     }
 }
 
+@Test func parsesProjectCompletionUpdate() throws {
+    let enabled = try CLI.parse([
+        "ofctl", "project-completion", "Product Launch",
+        "--complete-with-last-action",
+        "--dry-run",
+    ])
+
+    #expect(enabled == CommandLineOptions(command: .projectCompletion(UpdateProjectCompletion(
+        project: "Product Launch",
+        completeWithLastAction: true,
+        dryRun: true
+    ))))
+
+    let disabled = try CLI.parse([
+        "ofctl", "project-completion", "Product Launch",
+        "--no-complete-with-last-action",
+    ])
+
+    #expect(disabled == CommandLineOptions(command: .projectCompletion(UpdateProjectCompletion(
+        project: "Product Launch",
+        completeWithLastAction: false,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesProjectCompletionRequiresFlag() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "project-completion", "Product Launch"])
+    }
+}
+
 @Test func parsesProjectCreate() throws {
     let options = try CLI.parse([
         "ofctl", "project-create", "Work Notifications",
@@ -1091,6 +1122,10 @@ import Testing
         UpdateProjectStatus(project: "Product Launch", status: .onHold, dryRun: true),
         privacyScope: .work
     )
+    let projectCompletionScript = try OmniJavaScript.updateProjectCompletion(
+        UpdateProjectCompletion(project: "Product Launch", completeWithLastAction: true, dryRun: true),
+        privacyScope: .work
+    )
 
     #expect(addScript.contains("assertAddDestinationAvailable(dryRunProject, parentTask);"))
     #expect(addScript.contains("assertTaskAvailableInPrivacyScope(parentTask"))
@@ -1100,6 +1135,7 @@ import Testing
     #expect(moveTasksScript.contains("assertNoSourceTargetConflict(resolvedTasks, targetTask"))
     #expect(moveTasksScript.contains("moveTasks(resolvedTasks, destinationLocation)"))
     #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    #expect(projectCompletionScript.contains("assertProjectAvailableInPrivacyScope(project"))
 
     let moveScript = try OmniJavaScript.moveProject(
         MoveProject(project: "Home Maintenance", folder: "Home", dryRun: true),
@@ -1199,6 +1235,18 @@ import Testing
 
     #expect(taskScript.contains("task.name = input.newName;"))
     #expect(projectScript.contains("project.name = input.newName;"))
+}
+
+@Test func generatedProjectCompletionScriptSetsCompletedByChildren() throws {
+    let projectScript = try OmniJavaScript.updateProjectCompletion(UpdateProjectCompletion(
+        project: "Product Launch",
+        completeWithLastAction: true,
+        dryRun: false
+    ))
+
+    #expect(projectScript.contains("project.completedByChildren = input.completeWithLastAction;"))
+    #expect(projectScript.contains("Complete with last action only applies to parallel and sequential projects"))
+    #expect(projectScript.contains("completeWithLastAction: project.completedByChildren"))
 }
 
 private func defaultTaskQuery() -> TaskQuery {

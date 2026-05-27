@@ -27,6 +27,7 @@ public struct CommandLineOptions: Equatable {
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
         case projectRename(RenameProject)
+        case projectCompletion(UpdateProjectCompletion)
         case projectCreate(CreateProject)
         case folderCreate(CreateFolder)
         case tags(TagsQuery)
@@ -136,6 +137,12 @@ public struct MoveProject: Equatable {
 public struct RenameProject: Equatable {
     public var project: String
     public var newName: String
+    public var dryRun: Bool
+}
+
+public struct UpdateProjectCompletion: Equatable {
+    public var project: String
+    public var completeWithLastAction: Bool
     public var dryRun: Bool
 }
 
@@ -264,6 +271,7 @@ public enum CLI {
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
       ofctl project-rename PROJECT_NAME --to NEW_NAME [--dry-run]
+      ofctl project-completion PROJECT_NAME (--complete-with-last-action|--no-complete-with-last-action) [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
       ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
       ofctl tags [--format json|text]
@@ -317,6 +325,8 @@ public enum CLI {
             return try CommandLineOptions(command: .projectMove(parseMoveProject(args)))
         case "project-rename":
             return try CommandLineOptions(command: .projectRename(parseRenameProject(args)))
+        case "project-completion":
+            return try CommandLineOptions(command: .projectCompletion(parseUpdateProjectCompletion(args)))
         case "project-create":
             return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
         case "folder-create":
@@ -865,6 +875,35 @@ public enum CLI {
         }
 
         return RenameProject(project: project, newName: newName, dryRun: dryRun)
+    }
+
+    private static func parseUpdateProjectCompletion(_ args: [String]) throws -> UpdateProjectCompletion {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-completion requires a project name\n\n\(help)")
+        }
+
+        var completeWithLastAction: Bool?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--complete-with-last-action", "--complete-with-children":
+                completeWithLastAction = true
+            case "--no-complete-with-last-action", "--no-complete-with-children":
+                completeWithLastAction = false
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-completion: \(arg)")
+            }
+        }
+
+        guard let completeWithLastAction else {
+            throw CLIError.usage("project-completion requires --complete-with-last-action or --no-complete-with-last-action")
+        }
+
+        return UpdateProjectCompletion(project: project, completeWithLastAction: completeWithLastAction, dryRun: dryRun)
     }
 
     private static func parseCreateProject(_ args: [String]) throws -> CreateProject {

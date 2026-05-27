@@ -31,6 +31,7 @@ The command surface is intentionally narrow:
 - `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes
 - `project-rename PROJECT_NAME --to NEW_NAME` for native project renames
+- `project-completion PROJECT_NAME --complete-with-last-action|--no-complete-with-last-action` for the project "Complete with last action" flag on parallel/sequential projects
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
 - `tags` to list all tags with paths (not folder-scoped; always returns all tags)

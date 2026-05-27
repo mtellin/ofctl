@@ -85,6 +85,10 @@ public struct OmniFocusClient {
         try runner.runOmniJavaScript(OmniJavaScript.renameProject(rename, privacyScope: privacyScope))
     }
 
+    public func updateProjectCompletion(_ update: UpdateProjectCompletion) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.updateProjectCompletion(update, privacyScope: privacyScope))
+    }
+
     public func createProject(_ create: CreateProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.createProject(create, privacyScope: privacyScope))
     }
@@ -1124,6 +1128,66 @@ enum OmniJavaScript {
               name: project.name,
               previousName,
               folder: projectFolderNamesForProject(project)
+            },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func updateProjectCompletion(_ update: UpdateProjectCompletion, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(update.project)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            project: \(project),
+            completeWithLastAction: \(update.completeWithLastAction ? "true" : "false"),
+            dryRun: \(update.dryRun ? "true" : "false")
+          };
+
+          function projectNamed(name) {
+            const project = flattenedProjects.byName(name);
+            if (!project) {
+              throw new Error(`Project not found: ${name}`);
+            }
+            return project;
+          }
+
+          const project = projectNamed(input.project);
+          assertProjectAvailableInPrivacyScope(project, `Project not found or not available in current privacy scope: ${input.project}`);
+          if (project.containsSingletonActions) {
+            throw new Error(`Complete with last action only applies to parallel and sequential projects: ${input.project}`);
+          }
+
+          const previousCompleteWithLastAction = project.completedByChildren;
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              project: {
+                id: project.id.primaryKey,
+                name: project.name,
+                sequential: project.sequential,
+                completeWithLastAction: input.completeWithLastAction,
+                previousCompleteWithLastAction
+              },
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          project.completedByChildren = input.completeWithLastAction;
+
+          return JSON.stringify({
+            project: {
+              id: project.id.primaryKey,
+              name: project.name,
+              sequential: project.sequential,
+              completeWithLastAction: project.completedByChildren,
+              previousCompleteWithLastAction
             },
             meta: { privacyScope }
           }, null, 2);
