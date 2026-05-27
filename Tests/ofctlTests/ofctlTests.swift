@@ -1104,14 +1104,19 @@ import Testing
 @Test func taskQueryUsesEffectiveCompletionAndDropState() throws {
     let script = try OmniJavaScript.tasksQuery(defaultTaskQuery())
 
-    #expect(script.contains("task.effectivelyCompleted"))
-    #expect(script.contains("task.effectivelyDropped"))
-    #expect(script.contains("if (!includeCompleted && !completedFilter && task.effectivelyCompleted)"))
-    #expect(script.contains("if (!includeDropped && task.effectivelyDropped)"))
-    #expect(script.contains("completed: task.effectivelyCompleted"))
-    #expect(script.contains("dropped: task.effectivelyDropped"))
+    #expect(script.contains("taskEffectivelyCompleted(task)"))
+    #expect(script.contains("taskEffectivelyDropped(task)"))
+    #expect(script.contains("if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task))"))
+    #expect(script.contains("if (!includeDropped && taskEffectivelyDropped(task))"))
+    #expect(script.contains("task.effectiveCompletedDate || task.completionDate"))
+    #expect(script.contains("return task.effectiveCompletedDate !== null;"))
+    #expect(script.contains("return task.effectiveDropDate !== null;"))
+    #expect(script.contains("completed: effectivelyCompleted"))
+    #expect(script.contains("dropped: effectivelyDropped"))
     #expect(script.contains("individuallyCompleted: task.completed"))
     #expect(script.contains("individuallyDropped: task.dropDate !== null"))
+    #expect(script.contains("effectiveCompletionDate: iso(task.effectiveCompletedDate)"))
+    #expect(script.contains("effectiveDropDate: iso(task.effectiveDropDate)"))
 }
 
 @Test func workPrivacyScopeGuardsDirectTaskLookup() throws {

@@ -275,6 +275,8 @@ Default output is JSON. Task objects include:
 - `plannedDate`
 - `dueDate`
 - `completionDate`
+- `effectiveCompletionDate`
+- `effectiveDropDate`
 - `effectiveDeferDate`
 - `effectivePlannedDate`
 - `effectiveDueDate`

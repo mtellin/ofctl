@@ -321,8 +321,8 @@ enum OmniJavaScript {
             if (projectIds.has(task.id.primaryKey)) { return false; }
             if (!task.inInbox && task.parent === null && task.containingProject !== null) { return false; }
             if (!taskAllowedByPrivacyScope(task)) { return false; }
-            if (!includeCompleted && !completedFilter && task.effectivelyCompleted) { return false; }
-            if (!includeDropped && task.effectivelyDropped) { return false; }
+            if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task)) { return false; }
+            if (!includeDropped && taskEffectivelyDropped(task)) { return false; }
             if (!projectMatches(task)) { return false; }
             if (!folderMatches(task)) { return false; }
             if (!tagMatches(task)) { return false; }
@@ -332,7 +332,7 @@ enum OmniJavaScript {
             if (!dateMatches(task.deferDate, deferredFilter, false)) { return false; }
             if (!dateMatches(task.effectiveDueDate || task.dueDate, dueFilter, false)) { return false; }
             if (!repeatRuleMatches(task, repeatRuleFilter)) { return false; }
-            if (!dateMatches(task.completionDate, completedFilter, false)) { return false; }
+            if (!dateMatches(task.effectiveCompletedDate || task.completionDate, completedFilter, false)) { return false; }
             return true;
           });
 
@@ -2154,6 +2154,8 @@ function childTasks(task) {
 function serializeTask(task, includeNotes, includeChildren) {
   const children = childTasks(task);
   const repetitionRule = task.repetitionRule;
+  const effectivelyCompleted = taskEffectivelyCompleted(task);
+  const effectivelyDropped = taskEffectivelyDropped(task);
   return {
     id: task.id.primaryKey,
     name: task.name,
@@ -2168,6 +2170,8 @@ function serializeTask(task, includeNotes, includeChildren) {
     plannedDate: iso(task.plannedDate),
     dueDate: iso(task.dueDate),
     completionDate: iso(task.completionDate),
+    effectiveCompletionDate: iso(task.effectiveCompletedDate),
+    effectiveDropDate: iso(task.effectiveDropDate),
     effectiveDeferDate: iso(task.effectiveDeferDate),
     effectivePlannedDate: iso(task.effectivePlannedDate),
     effectiveDueDate: iso(task.effectiveDueDate),
@@ -2188,13 +2192,21 @@ function serializeTask(task, includeNotes, includeChildren) {
     completedByChildren: task.completedByChildren,
     children: includeChildren ? children.map(child => serializeTask(child, includeNotes, true)) : undefined,
     flagged: task.flagged,
-    completed: task.effectivelyCompleted,
-    dropped: task.effectivelyDropped,
+    completed: effectivelyCompleted,
+    dropped: effectivelyDropped,
     individuallyCompleted: task.completed,
     individuallyDropped: task.dropDate !== null,
-    effectivelyCompleted: task.effectivelyCompleted,
-    effectivelyDropped: task.effectivelyDropped,
+    effectivelyCompleted,
+    effectivelyDropped,
     path: pathForTask(task)
   };
+}
+
+function taskEffectivelyCompleted(task) {
+  return task.effectiveCompletedDate !== null;
+}
+
+function taskEffectivelyDropped(task) {
+  return task.effectiveDropDate !== null;
 }
 """#
