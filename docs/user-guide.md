@@ -343,6 +343,15 @@ If the named project does not exist, `ofctl` creates it as a top-level
 OmniFocus project before adding the task. `--dry-run` reports whether the
 project already exists or would be created.
 
+Add to a project inside a folder, including a nested folder:
+
+```sh
+ofctl add "Ask Taylor about launch date" --project "Work Follow-ups" --folder "Work/Planning"
+```
+
+When `--folder` is present, `ofctl` targets or creates the named project inside
+that folder path. `--folder` requires `--project`.
+
 Add tags:
 
 ```sh
@@ -714,8 +723,10 @@ already define an exact insertion point.
 ### Regular project
 
 `ofctl add --project NAME` creates a regular parallel project if one with that
-name does not already exist. Use this for multi-step projects where you add the
-first task at the same time.
+name does not already exist. Omitting `--folder` creates the project at the
+library top level; adding `--folder FOLDER_PATH` targets or creates the project
+inside that folder, including nested paths like `Work/Planning`. Use this for
+multi-step projects where you add the first task at the same time.
 
 ### Dedicated project-create command
 

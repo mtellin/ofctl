@@ -242,6 +242,33 @@ import Testing
     ))))
 }
 
+@Test func parsesAddTaskWithProjectFolder() throws {
+    let options = try CLI.parse([
+        "ofctl", "add", "Ask Taylor about launch date",
+        "--project", "Product",
+        "--folder", "Work/Planning",
+    ])
+
+    #expect(options == CommandLineOptions(command: .add(AddTask(
+        name: "Ask Taylor about launch date",
+        project: "Product",
+        folder: "Work/Planning",
+        parent: nil,
+        tags: [],
+        actionGroup: false,
+        dryRun: false
+    ))))
+}
+
+@Test func rejectsAddTaskFolderWithoutProject() throws {
+    do {
+        _ = try CLI.parse(["ofctl", "add", "Ask Taylor about launch date", "--folder", "Work"])
+        Issue.record("Expected --folder without --project to fail")
+    } catch let error as CLIError {
+        #expect(error == .usage("--folder requires --project"))
+    }
+}
+
 @Test func parsesAddTaskWithRepeatRule() throws {
     let options = try CLI.parse([
         "ofctl", "add", "Water plants",
@@ -1168,6 +1195,18 @@ import Testing
     )
     #expect(createFolderScript.contains("folderAllowedByPrivacyScope(parentFolder)"))
     #expect(createFolderScript.contains("Creating a folder at the top level is not allowed in the current privacy scope"))
+}
+
+@Test func omniJavaScriptSupportsAddProjectFolder() throws {
+    let addScript = try OmniJavaScript.addTask(AddTask(
+        name: "Ask Taylor about launch date",
+        project: "Product",
+        folder: "Work/Planning"
+    ))
+
+    #expect(addScript.contains("folder: \"Work\\/Planning\""))
+    #expect(addScript.contains("const folder = folderForPath(input.folder);"))
+    #expect(addScript.contains("new Project(name, folder.ending)"))
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {

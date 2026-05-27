@@ -74,6 +74,7 @@ public struct TaskLookup: Equatable {
 public struct AddTask: Equatable {
     public var name: String
     public var project: String?
+    public var folder: String?
     public var parent: String?
     public var tags: [String]
     public var deferDate: String?
@@ -88,6 +89,44 @@ public struct AddTask: Equatable {
     public var flagged: Bool?
     public var actionGroup: Bool
     public var dryRun: Bool
+
+    public init(
+        name: String,
+        project: String? = nil,
+        folder: String? = nil,
+        parent: String? = nil,
+        tags: [String] = [],
+        deferDate: String? = nil,
+        plannedDate: String? = nil,
+        dueDate: String? = nil,
+        repeatRule: String? = nil,
+        repeatMethod: RepeatMethod? = nil,
+        estimatedMinutes: Int? = nil,
+        note: String? = nil,
+        sequential: Bool? = nil,
+        completedByChildren: Bool? = nil,
+        flagged: Bool? = nil,
+        actionGroup: Bool = false,
+        dryRun: Bool = false
+    ) {
+        self.name = name
+        self.project = project
+        self.folder = folder
+        self.parent = parent
+        self.tags = tags
+        self.deferDate = deferDate
+        self.plannedDate = plannedDate
+        self.dueDate = dueDate
+        self.repeatRule = repeatRule
+        self.repeatMethod = repeatMethod
+        self.estimatedMinutes = estimatedMinutes
+        self.note = note
+        self.sequential = sequential
+        self.completedByChildren = completedByChildren
+        self.flagged = flagged
+        self.actionGroup = actionGroup
+        self.dryRun = dryRun
+    }
 }
 
 public struct UpdateTask: Equatable {
@@ -263,8 +302,8 @@ public enum CLI {
       ofctl perspectives [--format json|text]
       ofctl task TASK_ID [--include-notes] [--include-children] [--format json|text]
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
-      ofctl add NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
-      ofctl add-group NAME [--project NAME|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
+      ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
+      ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
       ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
       ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
@@ -288,7 +327,7 @@ public enum CLI {
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
       Task date filters support: now, today, tomorrow, yesterday, none, before:DATE, after:DATE, on:YYYY-MM-DD.
       DATE can be now, today, tomorrow, yesterday, YYYY-MM-DD, or an ISO-like date/time.
-      Task --project values create a top-level project when no project with that name exists.
+      Task --project values create a top-level project when no project with that name exists; add --folder FOLDER_PATH to create or target that project inside a folder.
       Task --tag values can be leaf names or paths like People/Alex Rivera and Status/Work 💼.
       Repeat rules are ICS RRULE strings such as FREQ=WEEKLY;INTERVAL=1.
     """
@@ -492,6 +531,7 @@ public enum CLI {
         var task = AddTask(
             name: name,
             project: nil,
+            folder: nil,
             parent: nil,
             tags: [],
             deferDate: nil,
@@ -512,6 +552,8 @@ public enum CLI {
             switch arg {
             case "--project":
                 task.project = try parser.value(after: arg)
+            case "--folder":
+                task.folder = try parser.value(after: arg)
             case "--parent":
                 task.parent = try parser.value(after: arg)
             case "--tag":
@@ -561,6 +603,9 @@ public enum CLI {
 
         if task.project != nil && task.parent != nil {
             throw CLIError.usage("--project and --parent cannot be used together")
+        }
+        if task.folder != nil && task.project == nil {
+            throw CLIError.usage("--folder requires --project")
         }
         if task.repeatMethod != nil && task.repeatRule == nil {
             throw CLIError.usage("--repeat-method requires --repeat-rule")

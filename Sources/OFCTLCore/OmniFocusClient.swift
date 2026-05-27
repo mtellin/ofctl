@@ -414,6 +414,7 @@ enum OmniJavaScript {
     static func addTask(_ task: AddTask, privacyScope: PrivacyScope = .unrestricted) throws -> String {
         let name = try jsonLiteral(task.name)
         let project = try jsonLiteral(task.project)
+        let folder = try jsonLiteral(task.folder)
         let parent = try jsonLiteral(task.parent)
         let tags = try jsonLiteral(task.tags)
         let deferDate = try jsonLiteral(task.deferDate)
@@ -433,10 +434,12 @@ enum OmniJavaScript {
           \(markdownNoteSupport)
           \(privacy)
           \(taskSerializationSupport)
+          \(folderSupport)
 
           const input = {
             name: \(name),
             project: \(project),
+            folder: \(folder),
             parent: \(parent),
             tags: \(tags),
             deferDate: \(deferDate),
@@ -489,14 +492,36 @@ enum OmniJavaScript {
 
           function existingProjectNamed(name) {
             if (!name) { return { project: null, created: false }; }
+            if (input.folder !== null) {
+              const folder = folderForPath(input.folder);
+              const folderProjectMatches = flattenedProjects.filter(project => (
+                project.name === name && projectFolderNamesForProject(project).join("/") === folderPath(folder).join("/")
+              ));
+              if (folderProjectMatches.length === 1) { return { project: folderProjectMatches[0], created: false }; }
+              if (folderProjectMatches.length > 1) {
+                throw new Error(`Ambiguous project in folder: ${input.folder}/${name}`);
+              }
+              return { project: null, created: false };
+            }
             const project = flattenedProjects.byName(name);
             return { project, created: false };
           }
 
           function projectNamedOrCreated(name) {
             if (!name) { return { project: null, created: false }; }
-            const existing = flattenedProjects.byName(name);
+            const existingResult = existingProjectNamed(name);
+            const existing = existingResult.project;
             if (existing) { return { project: existing, created: false }; }
+            if (input.folder !== null) {
+              const folder = folderForPath(input.folder);
+              if (!folderAllowedByPrivacyScope(folder)) {
+                throw new Error(`Destination folder not available in current privacy scope: ${input.folder}`);
+              }
+              return { project: new Project(name, folder.ending), created: true };
+            }
+            if (privacyScope) {
+              throw new Error(`Creating a project at the top level is not allowed in the current privacy scope`);
+            }
             return { project: new Project(name, library.ending), created: true };
           }
 
@@ -518,6 +543,13 @@ enum OmniJavaScript {
             if (input.project === null) {
               if (!privacyAllowInbox) {
                 throw new Error("Inbox is not available in current privacy scope");
+              }
+              return;
+            }
+            if (input.folder !== null) {
+              const folder = folderForPath(input.folder);
+              if (!folderAllowedByPrivacyScope(folder)) {
+                throw new Error(`Destination folder not available in current privacy scope: ${input.folder}`);
               }
               return;
             }

@@ -247,9 +247,9 @@ ofctl project-delete "Home Maintenance"
 - `ofctl tasks`: query tasks by project, folder, tag, availability, planned
   date, defer date, due date, repeat rule, completion date, perspective,
   flagged state, completion/dropped state, and output format.
-- `ofctl add`: create a task with project, tags, defer/planned/due dates,
-  repeat rule, duration, Markdown notes, action group settings, flag state, or
-  a parent action group.
+- `ofctl add`: create a task with project and optional folder path, tags,
+  defer/planned/due dates, repeat rule, duration, Markdown notes, action group
+  settings, flag state, or a parent action group.
 - `ofctl add-group`: create an action group, optionally sequential/parallel and
   optionally completed by its children.
 - `ofctl update`: update one or more tasks by ID — name, project, tags, dates,
