@@ -321,8 +321,8 @@ enum OmniJavaScript {
             if (projectIds.has(task.id.primaryKey)) { return false; }
             if (!task.inInbox && task.parent === null && task.containingProject !== null) { return false; }
             if (!taskAllowedByPrivacyScope(task)) { return false; }
-            if (!includeCompleted && !completedFilter && task.completed) { return false; }
-            if (!includeDropped && task.dropDate) { return false; }
+            if (!includeCompleted && !completedFilter && task.effectivelyCompleted) { return false; }
+            if (!includeDropped && task.effectivelyDropped) { return false; }
             if (!projectMatches(task)) { return false; }
             if (!folderMatches(task)) { return false; }
             if (!tagMatches(task)) { return false; }
@@ -2188,8 +2188,12 @@ function serializeTask(task, includeNotes, includeChildren) {
     completedByChildren: task.completedByChildren,
     children: includeChildren ? children.map(child => serializeTask(child, includeNotes, true)) : undefined,
     flagged: task.flagged,
-    completed: task.completed,
-    dropped: task.dropDate !== null,
+    completed: task.effectivelyCompleted,
+    dropped: task.effectivelyDropped,
+    individuallyCompleted: task.completed,
+    individuallyDropped: task.dropDate !== null,
+    effectivelyCompleted: task.effectivelyCompleted,
+    effectivelyDropped: task.effectivelyDropped,
     path: pathForTask(task)
   };
 }

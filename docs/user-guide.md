@@ -291,7 +291,16 @@ Default output is JSON. Task objects include:
 - `flagged`
 - `completed`
 - `dropped`
+- `individuallyCompleted`
+- `individuallyDropped`
+- `effectivelyCompleted`
+- `effectivelyDropped`
 - `path`
+
+`completed` and `dropped` reflect OmniFocus's effective task state, including
+completion or drop state inherited from a parent action group, project, or
+folder. The `individuallyCompleted` and `individuallyDropped` fields reflect
+only the task's own state.
 
 Response metadata includes:
 

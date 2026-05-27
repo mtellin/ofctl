@@ -1101,6 +1101,19 @@ import Testing
     #expect(script.contains("privacyScope,"))
 }
 
+@Test func taskQueryUsesEffectiveCompletionAndDropState() throws {
+    let script = try OmniJavaScript.tasksQuery(defaultTaskQuery())
+
+    #expect(script.contains("task.effectivelyCompleted"))
+    #expect(script.contains("task.effectivelyDropped"))
+    #expect(script.contains("if (!includeCompleted && !completedFilter && task.effectivelyCompleted)"))
+    #expect(script.contains("if (!includeDropped && task.effectivelyDropped)"))
+    #expect(script.contains("completed: task.effectivelyCompleted"))
+    #expect(script.contains("dropped: task.effectivelyDropped"))
+    #expect(script.contains("individuallyCompleted: task.completed"))
+    #expect(script.contains("individuallyDropped: task.dropDate !== null"))
+}
+
 @Test func workPrivacyScopeGuardsDirectTaskLookup() throws {
     let script = try OmniJavaScript.taskLookup(
         TaskLookup(id: "abc123", includeNotes: true, includeChildren: true, format: .json),
