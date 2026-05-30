@@ -661,6 +661,7 @@ enum OmniJavaScript {
             drop: \(task.drop ? "true" : "false"),
             dropAllOccurrences: \(task.dropAllOccurrences ? "true" : "false"),
             skip: \(task.skip ? "true" : "false"),
+            createProjectIfMissing: \(task.createProjectIfMissing ? "true" : "false"),
             dryRun: \(task.dryRun ? "true" : "false")
           };
 
@@ -735,6 +736,9 @@ enum OmniJavaScript {
               throw new Error(`Project not found or not available in current privacy scope: ${input.project}`);
             }
           }
+          if (!input.createProjectIfMissing && input.project !== undefined && input.project !== null && !dryRunProject.project) {
+            throw new Error(`Project not found: ${input.project}`);
+          }
           const dryRunAddTags = input.addTags.map(name => existingTagNamedOrPath(name));
           const dryRunRemoveTags = input.removeTags.map(name => existingTagNamedOrPath(name));
 
@@ -765,7 +769,10 @@ enum OmniJavaScript {
           if (input.project !== undefined) {
             const projectResult = input.project === null
               ? { project: null, created: false }
-              : projectNamedOrCreated(input.project);
+              : (input.createProjectIfMissing ? projectNamedOrCreated(input.project) : existingProjectNamed(input.project));
+            if (input.project !== null && !projectResult.project) {
+              throw new Error(`Project not found: ${input.project}`);
+            }
             projectCreated = projectResult.created;
             const insertion = projectResult.project === null ? inbox.ending : projectResult.project.ending;
             moveTasks(resolvedTasks, insertion);

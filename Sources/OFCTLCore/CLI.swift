@@ -152,6 +152,7 @@ public struct UpdateTask: Equatable {
     public var dropAllOccurrences: Bool
     public var skip: Bool
     public var flagged: Bool?
+    public var createProjectIfMissing: Bool = true
     public var dryRun: Bool
 }
 
@@ -304,7 +305,7 @@ public enum CLI {
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
       ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
       ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
-      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
+      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
       ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
@@ -327,7 +328,8 @@ public enum CLI {
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
       Task date filters support: now, today, tomorrow, yesterday, none, before:DATE, after:DATE, on:YYYY-MM-DD.
       DATE can be now, today, tomorrow, yesterday, YYYY-MM-DD, or an ISO-like date/time.
-      Task --project values create a top-level project when no project with that name exists; add --folder FOLDER_PATH to create or target that project inside a folder.
+      Task --project values create a top-level project when no project with that name exists; use update --no-create-project to require an existing project.
+      Add --folder FOLDER_PATH to create or target a project inside a folder when adding tasks.
       Task --tag values can be leaf names or paths like People/Alex Rivera and Status/Work 💼.
       Repeat rules are ICS RRULE strings such as FREQ=WEEKLY;INTERVAL=1.
     """
@@ -659,6 +661,8 @@ public enum CLI {
                 task.name = try parser.value(after: arg)
             case "--project":
                 task.project = .some(try nullableValue(after: arg, parser: &parser))
+            case "--no-create-project":
+                task.createProjectIfMissing = false
             case "--tag", "--add-tag":
                 task.addTags.append(try parser.value(after: arg))
             case "--remove-tag":

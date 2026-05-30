@@ -563,6 +563,15 @@ ofctl update TASK_ID --project "Work Follow-ups"
 If the named project does not exist, `ofctl` creates it as a top-level
 OmniFocus project before moving the task.
 
+Require the project to already exist:
+
+```sh
+ofctl update TASK_ID --project "Work Follow-ups" --no-create-project
+```
+
+Use this guardrail when processing inbox tasks or when the project name may be a
+partial match.
+
 Move back to the inbox:
 
 ```sh

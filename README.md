@@ -254,7 +254,8 @@ ofctl project-delete "Home Maintenance"
   optionally completed by its children.
 - `ofctl update`: update one or more tasks by ID — name, project, tags, dates,
   repeat rule, duration, notes, completion state, dropped state, flag state,
-  action group settings, and skipped repeating occurrences.
+  action group settings, skipped repeating occurrences, and optional
+  `--no-create-project` protection when moving to a project.
 - `ofctl task-rename`: rename one task by ID using OmniFocus's native task
   name property.
 - `ofctl task-move`: reorder one or more tasks before/after another task, or

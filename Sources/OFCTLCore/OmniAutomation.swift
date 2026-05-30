@@ -9,6 +9,51 @@ private struct AppleEventSendFailure: Error {
     let message: String
 }
 
+struct OmniFocusLaunchAttempt: Equatable {
+    var label: String
+    var arguments: [String]
+}
+
+struct OmniFocusLaunchConfiguration: Equatable {
+    var bundleIdentifier: String
+    var applicationPath: String
+    var applicationName: String
+}
+
+func omniFocusLaunchAttempts(
+    configuration: OmniFocusLaunchConfiguration,
+    workspaceApplicationPath: String?,
+    spotlightApplicationPaths: [String],
+    fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+) -> [OmniFocusLaunchAttempt] {
+    var attempts: [OmniFocusLaunchAttempt] = []
+    var paths: [String] = []
+
+    func appendPath(_ path: String?) {
+        guard let path, !path.isEmpty, !paths.contains(path) else { return }
+        paths.append(path)
+    }
+
+    appendPath(configuration.applicationPath)
+    appendPath(workspaceApplicationPath)
+    spotlightApplicationPaths.forEach { appendPath($0) }
+
+    for path in paths where fileExists(path) {
+        attempts.append(OmniFocusLaunchAttempt(label: "path \(path)", arguments: [path]))
+    }
+
+    attempts.append(OmniFocusLaunchAttempt(
+        label: "bundle id \(configuration.bundleIdentifier)",
+        arguments: ["-b", configuration.bundleIdentifier]
+    ))
+    attempts.append(OmniFocusLaunchAttempt(
+        label: "application name \(configuration.applicationName)",
+        arguments: ["-a", configuration.applicationName]
+    ))
+
+    return attempts
+}
+
 public struct OmniJavaScriptRunner: AutomationRunning {
     private let bundleIdentifier: String
     private let applicationPath: String
@@ -86,42 +131,39 @@ public struct OmniJavaScriptRunner: AutomationRunning {
     }
 
     private func launchTargetDescriptor(after originalError: Error) throws -> NSAppleEventDescriptor {
-        if let app = runningApplication() {
+        if let app = waitForRunningApplication(maxAttempts: 5) {
             return NSAppleEventDescriptor(processIdentifier: app.processIdentifier)
         }
 
-        guard launchOmniFocus() else {
+        let failedAttempts = launchOmniFocus()
+        guard failedAttempts.isEmpty else {
+            let pathStatus = FileManager.default.fileExists(atPath: applicationPath)
+                ? "exists"
+                : "does not exist"
             throw CLIError.automation("""
             \((originalError as? AppleEventSendFailure)?.message ?? originalError.localizedDescription)
-            Also failed to launch OmniFocus with bundle id \(bundleIdentifier), app name \(applicationName), or path \(applicationPath)
+            Also failed to launch OmniFocus. Tried \(failedAttempts.joined(separator: ", ")).
+            Configured app path \(applicationPath) \(pathStatus).
             """)
         }
 
-        for _ in 0..<50 {
-            if let app = runningApplication() {
-                return NSAppleEventDescriptor(processIdentifier: app.processIdentifier)
-            }
-            usleep(100_000)
+        if let app = waitForRunningApplication(maxAttempts: 50) {
+            return NSAppleEventDescriptor(processIdentifier: app.processIdentifier)
         }
 
         throw CLIError.automation("OmniFocus did not become available after launch")
     }
 
-    private func launchOmniFocus() -> Bool {
-        if launchOpen(arguments: ["-b", bundleIdentifier]) {
-            return true
-        }
-        if launchOpen(arguments: ["-a", applicationName]) {
-            return true
-        }
-
-        for path in candidateApplicationPaths() {
-            if launchOpen(arguments: [path]) {
-                return true
+    private func launchOmniFocus() -> [String] {
+        var failedAttempts: [String] = []
+        for attempt in launchAttempts() {
+            if launchOpen(arguments: attempt.arguments) {
+                return []
             }
+            failedAttempts.append(attempt.label)
         }
 
-        return false
+        return failedAttempts
     }
 
     private func launchOpen(arguments: [String]) -> Bool {
@@ -131,19 +173,16 @@ public struct OmniJavaScriptRunner: AutomationRunning {
         return launch(process)
     }
 
-    private func candidateApplicationPaths() -> [String] {
-        var paths: [String] = []
-
-        func append(_ path: String?) {
-            guard let path, !path.isEmpty, !paths.contains(path) else { return }
-            paths.append(path)
-        }
-
-        append(applicationPath)
-        append(NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)?.path)
-        mdfindApplicationPaths().forEach { append($0) }
-
-        return paths
+    private func launchAttempts() -> [OmniFocusLaunchAttempt] {
+        omniFocusLaunchAttempts(
+            configuration: OmniFocusLaunchConfiguration(
+                bundleIdentifier: bundleIdentifier,
+                applicationPath: applicationPath,
+                applicationName: applicationName
+            ),
+            workspaceApplicationPath: NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)?.path,
+            spotlightApplicationPaths: mdfindApplicationPaths()
+        )
     }
 
     private func mdfindApplicationPaths() -> [String] {
@@ -179,6 +218,18 @@ public struct OmniJavaScriptRunner: AutomationRunning {
         } catch {
             return false
         }
+    }
+
+    private func waitForRunningApplication(maxAttempts: Int) -> NSRunningApplication? {
+        for attempt in 0..<maxAttempts {
+            if let app = runningApplication() {
+                return app
+            }
+            if attempt < maxAttempts - 1 {
+                usleep(100_000)
+            }
+        }
+        return nil
     }
 
     private func runningApplication() -> NSRunningApplication? {

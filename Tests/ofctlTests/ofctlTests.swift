@@ -439,6 +439,46 @@ import Testing
     #expect(fourCharCode("OFEJ") == 0x4f46454a)
 }
 
+@Test func omniFocusLaunchAttemptsPreferExistingAppPathsBeforeLaunchServicesLookups() {
+    let attempts = omniFocusLaunchAttempts(
+        configuration: OmniFocusLaunchConfiguration(
+            bundleIdentifier: "com.omnigroup.OmniFocus4",
+            applicationPath: "/Applications/OmniFocus.app",
+            applicationName: "OmniFocus"
+        ),
+        workspaceApplicationPath: "/Users/taylor/Applications/OmniFocus.app",
+        spotlightApplicationPaths: ["/Applications/OmniFocus.app", "/Volumes/Backup/OmniFocus.app"],
+        fileExists: { path in
+            path == "/Applications/OmniFocus.app" || path == "/Users/taylor/Applications/OmniFocus.app"
+        }
+    )
+
+    #expect(attempts.map(\.arguments) == [
+        ["/Applications/OmniFocus.app"],
+        ["/Users/taylor/Applications/OmniFocus.app"],
+        ["-b", "com.omnigroup.OmniFocus4"],
+        ["-a", "OmniFocus"],
+    ])
+}
+
+@Test func omniFocusLaunchAttemptsSkipMissingPathsButKeepBundleAndNameFallbacks() {
+    let attempts = omniFocusLaunchAttempts(
+        configuration: OmniFocusLaunchConfiguration(
+            bundleIdentifier: "com.omnigroup.OmniFocus4",
+            applicationPath: "/Applications/OmniFocus.app",
+            applicationName: "OmniFocus"
+        ),
+        workspaceApplicationPath: nil,
+        spotlightApplicationPaths: [],
+        fileExists: { _ in false }
+    )
+
+    #expect(attempts.map(\.arguments) == [
+        ["-b", "com.omnigroup.OmniFocus4"],
+        ["-a", "OmniFocus"],
+    ])
+}
+
 @Test func parsesUpdateTaskWithClearablePlanningFields() throws {
     let options = try CLI.parse([
         "ofctl", "update", "abc123",
@@ -536,6 +576,39 @@ import Testing
         drop: false,
         dropAllOccurrences: false,
         skip: false,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesUpdateTaskNoCreateProjectGuardrail() throws {
+    let options = try CLI.parse([
+        "ofctl", "update", "abc123",
+        "--project", "Circuit Board Training",
+        "--no-create-project",
+    ])
+
+    #expect(options == CommandLineOptions(command: .update(UpdateTask(
+        ids: ["abc123"],
+        name: nil,
+        project: .some("Circuit Board Training"),
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        flagged: nil,
+        createProjectIfMissing: false,
         dryRun: false
     ))))
 }
@@ -1030,6 +1103,17 @@ import Testing
     #expect(reviewScript.contains("project.markReviewed()"))
     #expect(reviewScript.contains("w: \"weeks\""))
     #expect(!reviewScript.contains("Project.ReviewInterval.Unit"))
+}
+
+@Test func updateTaskScriptCanRefuseMissingProjectCreation() throws {
+    var update = defaultUpdateTask()
+    update.createProjectIfMissing = false
+
+    let script = try OmniJavaScript.updateTask(update)
+
+    #expect(script.contains("createProjectIfMissing: false"))
+    #expect(script.contains("Project not found: ${input.project}"))
+    #expect(script.contains("input.createProjectIfMissing ? projectNamedOrCreated(input.project) : existingProjectNamed(input.project)"))
 }
 
 @Test func parsesTaskDelete() throws {
