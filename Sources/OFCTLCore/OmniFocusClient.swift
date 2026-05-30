@@ -1404,10 +1404,10 @@ enum OmniJavaScript {
             if (!match) { throw new Error(`Invalid interval spec "${spec}" — use format like 1w, 2m, 3d, 1y`); }
             const steps = Number(match[1]);
             const unitMap = {
-              d: Project.ReviewInterval.Unit.Days,
-              w: Project.ReviewInterval.Unit.Weeks,
-              m: Project.ReviewInterval.Unit.Months,
-              y: Project.ReviewInterval.Unit.Years
+              d: "days",
+              w: "weeks",
+              m: "months",
+              y: "years"
             };
             return new Project.ReviewInterval(steps, unitMap[match[2]]);
           }
@@ -1749,10 +1749,6 @@ function projectStatusName(status) {
 }
 
 function reviewIntervalUnitName(unit) {
-  if (unit === Project.ReviewInterval.Unit.Days) { return "days"; }
-  if (unit === Project.ReviewInterval.Unit.Weeks) { return "weeks"; }
-  if (unit === Project.ReviewInterval.Unit.Months) { return "months"; }
-  if (unit === Project.ReviewInterval.Unit.Years) { return "years"; }
   return String(unit);
 }
 

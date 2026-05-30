@@ -1020,6 +1020,7 @@ import Testing
     )
     #expect(projectsScript.contains("projectAllowedByPrivacyScope(project)"))
     #expect(projectsScript.contains("privacyScope"))
+    #expect(!projectsScript.contains("Project.ReviewInterval.Unit"))
 
     let reviewScript = try OmniJavaScript.updateProjectReview(
         UpdateProjectReview(project: "Work Notifications", markReviewed: true, interval: nil, dryRun: false),
@@ -1027,6 +1028,8 @@ import Testing
     )
     #expect(reviewScript.contains("assertProjectAvailableInPrivacyScope(project"))
     #expect(reviewScript.contains("project.markReviewed()"))
+    #expect(reviewScript.contains("w: \"weeks\""))
+    #expect(!reviewScript.contains("Project.ReviewInterval.Unit"))
 }
 
 @Test func parsesTaskDelete() throws {
