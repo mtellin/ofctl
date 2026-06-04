@@ -1756,7 +1756,15 @@ function projectStatusName(status) {
 }
 
 function reviewIntervalUnitName(unit) {
-  return String(unit);
+  try {
+    if (unit === ReviewInterval.Unit.days) { return "days"; }
+    if (unit === ReviewInterval.Unit.weeks) { return "weeks"; }
+    if (unit === ReviewInterval.Unit.months) { return "months"; }
+    if (unit === ReviewInterval.Unit.years) { return "years"; }
+    return null;
+  } catch(e) {
+    return null;
+  }
 }
 
 function serializeProject(project) {
