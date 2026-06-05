@@ -326,7 +326,7 @@ public enum CLI {
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
-      Task date filters support: now, today, tomorrow, yesterday, none, before:DATE, after:DATE, on:YYYY-MM-DD.
+      Task date filters support: all, now, today, tomorrow, yesterday, none, before:DATE, after:DATE, on:YYYY-MM-DD.
       DATE can be now, today, tomorrow, yesterday, YYYY-MM-DD, or an ISO-like date/time.
       Task --project values create a top-level project when no project with that name exists; use update --no-create-project to require an existing project.
       Add --folder FOLDER_PATH to create or target a project inside a folder when adding tasks.

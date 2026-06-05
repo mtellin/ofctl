@@ -273,6 +273,8 @@ enum OmniJavaScript {
             const now = new Date();
             const today = startOfDay(now);
 
+            if (filter === "all") { return true; }
+
             if (filter === "none") {
               return !date;
             }
@@ -282,11 +284,16 @@ enum OmniJavaScript {
               return date <= now;
             }
 
-            if (!date) { return false; }
-
             if (filter === "today") {
+              if (!date) { return emptyMatchesNow; }
+              if (emptyMatchesNow) {
+                // availability semantics: available at any point today (past or future within today)
+                return date < addDays(today, 1);
+              }
               return date >= today && date < addDays(today, 1);
             }
+
+            if (!date) { return false; }
             if (filter === "tomorrow") {
               return date >= addDays(today, 1) && date < addDays(today, 2);
             }
@@ -321,8 +328,14 @@ enum OmniJavaScript {
             if (projectIds.has(task.id.primaryKey)) { return false; }
             if (!task.inInbox && task.parent === null && task.containingProject !== null) { return false; }
             if (!taskAllowedByPrivacyScope(task)) { return false; }
-            if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task)) { return false; }
-            if (!includeDropped && taskEffectivelyDropped(task)) { return false; }
+            if (availableFilter !== null) {
+              // --available implies filtering to active tasks; completed/dropped are never available
+              if (taskEffectivelyCompleted(task) || taskEffectivelyDropped(task)) { return false; }
+            } else {
+              // no --available flag: raw mode — respect explicit --include-completed / --include-dropped flags only
+              if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task)) { return false; }
+              if (!includeDropped && taskEffectivelyDropped(task)) { return false; }
+            }
             if (!projectMatches(task)) { return false; }
             if (!folderMatches(task)) { return false; }
             if (!tagMatches(task)) { return false; }
