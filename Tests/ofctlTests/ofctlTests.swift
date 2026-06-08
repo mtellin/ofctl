@@ -1456,3 +1456,14 @@ private func defaultUpdateTask() -> UpdateTask {
         dryRun: false
     )
 }
+
+@Test func transientAutomationDetectionMatchesResurrectionErrors() throws {
+    // The crash we are guarding against: a stale object reference invalidated by a sync.
+    #expect(OmniJavaScriptRunner.isTransientAutomationMessage(
+        "Reference of object which could not be resurrected Task/aO-MSEDxXqN"))
+    #expect(OmniJavaScriptRunner.isTransientAutomationMessage(
+        "could not be RESURRECTED")) // case-insensitive
+    // Genuine, non-transient errors must not be retried.
+    #expect(!OmniJavaScriptRunner.isTransientAutomationMessage("Task not found: abc123"))
+    #expect(!OmniJavaScriptRunner.isTransientAutomationMessage("Project not found: Foo"))
+}

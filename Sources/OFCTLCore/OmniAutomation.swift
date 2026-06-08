@@ -9,6 +9,13 @@ private struct AppleEventSendFailure: Error {
     let message: String
 }
 
+/// An error returned by OmniFocus from a completed Apple Event (errorNumber != 0),
+/// as opposed to a failure to send the event in the first place.
+private struct AutomationReturnedError: Error {
+    let message: String
+    var isTransient: Bool { OmniJavaScriptRunner.isTransientAutomationMessage(message) }
+}
+
 struct OmniFocusLaunchAttempt: Equatable {
     var label: String
     var arguments: [String]
@@ -73,7 +80,43 @@ public struct OmniJavaScriptRunner: AutomationRunning {
         self.timeout = timeout
     }
 
+    /// Number of times to retry the whole script when OmniFocus returns a transient
+    /// automation error (e.g. an object reference invalidated by an in-progress sync).
+    private static let maxTransientRetries = 2
+
+    /// Substrings that identify an automation error as transient — caused by OmniFocus
+    /// mutating its database (typically a sync) while the script was running, rather than
+    /// by a genuine problem with the request. The "could not be resurrected" error is the
+    /// canonical case: an object reference went stale mid-script.
+    static func isTransientAutomationMessage(_ message: String) -> Bool {
+        let lowered = message.lowercased()
+        return lowered.contains("resurrect")
+            || lowered.contains("could not be resurrected")
+    }
+
     public func runOmniJavaScript(_ javascript: String) throws -> String {
+        var transientAttempt = 0
+        while true {
+            do {
+                return try runWithLaunchFallback(javascript)
+            } catch let automationError as AutomationReturnedError {
+                // Retry the entire script on a transient error. Because every command
+                // re-resolves its objects via byIdentifier on each run, re-running the
+                // script is enough to recover from a reference invalidated by a sync —
+                // no partial state is left behind. Back off briefly to let the sync settle.
+                if automationError.isTransient, transientAttempt < Self.maxTransientRetries {
+                    transientAttempt += 1
+                    usleep(UInt32(300_000 * transientAttempt)) // 300ms, then 600ms
+                    continue
+                }
+                throw CLIError.automation(automationError.message)
+            }
+        }
+    }
+
+    /// Runs the script once, launching OmniFocus and retrying a single time if the Apple
+    /// Event could not be delivered (e.g. the app wasn't running yet).
+    private func runWithLaunchFallback(_ javascript: String) throws -> String {
         let target = targetDescriptor()
         do {
             return try runOmniJavaScript(javascript, target: target)
@@ -84,8 +127,6 @@ public struct OmniJavaScriptRunner: AutomationRunning {
             } catch let retryError as AppleEventSendFailure {
                 throw CLIError.automation(retryError.message)
             }
-        } catch {
-            throw error
         }
     }
 
@@ -113,7 +154,7 @@ public struct OmniJavaScriptRunner: AutomationRunning {
            errorNumber != 0 {
             let errorMessage = reply.paramDescriptor(forKeyword: AEKeyword(keyErrorString))?.stringValue
             let message = errorMessage?.isEmpty == false ? errorMessage! : "OmniFocus returned Apple Event error \(errorNumber)"
-            throw CLIError.automation(message)
+            throw AutomationReturnedError(message: message)
         }
 
         guard let result = reply.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)) else {
