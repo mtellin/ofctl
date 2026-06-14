@@ -1448,7 +1448,9 @@ enum OmniJavaScript {
             project.reviewInterval = parseIntervalSpec(input.interval);
           }
           if (input.markReviewed) {
-            project.markReviewed();
+            // OmniFocus has no project.markReviewed() method; setting lastReviewDate to now
+            // recomputes nextReviewDate from the review interval, which is what "mark reviewed" means.
+            project.lastReviewDate = new Date();
           }
 
           return JSON.stringify({

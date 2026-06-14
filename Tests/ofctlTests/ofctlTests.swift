@@ -1100,7 +1100,7 @@ import Testing
         privacyScope: .work
     )
     #expect(reviewScript.contains("assertProjectAvailableInPrivacyScope(project"))
-    #expect(reviewScript.contains("project.markReviewed()"))
+    #expect(reviewScript.contains("project.lastReviewDate = new Date()"))
     #expect(reviewScript.contains("w: \"weeks\""))
     #expect(!reviewScript.contains("Project.ReviewInterval.Unit"))
 }
