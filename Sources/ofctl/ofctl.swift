@@ -62,6 +62,10 @@ struct OFCTL {
                 printProjects(output, format: query.format)
             case .projectReview(let review):
                 print(try client.reviewProject(review))
+            case .taskState(let state):
+                printState(try client.taskState(state), format: state.format)
+            case .projectState(let state):
+                printState(try client.projectState(state), format: state.format)
             }
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
@@ -154,6 +158,30 @@ struct OFCTL {
             } else {
                 print("- \(path)")
             }
+        }
+    }
+
+    private static func printState(_ json: String, format: OutputFormat) {
+        guard format == .text,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            print(json)
+            return
+        }
+
+        if object["dryRun"] as? Bool == true {
+            print("[dry-run] resulting crissy-state block:")
+        }
+        guard let state = object["state"] as? [String: Any], !state.isEmpty else {
+            print("(no crissy-state)")
+            return
+        }
+        // Preserve write order when provided; otherwise sort for stable output.
+        let order = object["order"] as? [String] ?? state.keys.sorted()
+        for key in order {
+            guard let value = state[key] else { continue }
+            print("\(key): \(value)")
         }
     }
 

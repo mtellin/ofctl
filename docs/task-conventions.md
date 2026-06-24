@@ -223,3 +223,39 @@ Include source context when migrating:
 ```text
 Source: Markdown task note - tasks/Ask Alex for project status.md
 ```
+
+## Crissy State Block
+
+Automated planning tooling may persist a small key/value metadata block at the
+end of a task or project note, delimited by a `=== crissy-state ===` sentinel
+line. This keeps prioritization state (slip history, a priority tier,
+why-it-matters context) in OmniFocus itself so it syncs across machines rather
+than living in a local file.
+
+Manage the block with `task-state` / `project-state` (see the user guide) — do
+not hand-edit it through `--note`, which replaces the whole note. The freeform
+note content above the sentinel is preserved across state writes.
+
+```text
+From: Circuit Daily Sync on 6/20/2026
+
+=== crissy-state ===
+priority: P1
+priority-source: auto
+slip-count: 3
+last-planned: 2026-06-23
+why: committed in sync; blocks the ADR
+```
+
+Conventions for the block:
+
+- `priority`: `P1` | `P2` | `P3` — persistent relative importance, distinct from
+  the native flag ("do this first today") and from any per-run scheduling tier.
+- `priority-source`: `auto` | `manual` — `manual` means a human set the tier and
+  it should not be auto-recomputed.
+- `slip-count`: integer; how many times the task was planned but not completed.
+- `last-planned` / `last-slip-date`: ISO dates used to compute carryover and to
+  keep slip increments idempotent (only increment once per slip day).
+- `why`: short free text on why the item matters. Values may contain colons.
+
+Projects use the same block with `last-reviewed` in place of the planning dates.

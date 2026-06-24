@@ -914,6 +914,87 @@ ofctl project-review "Home Maintenance" --interval none
 > which advances `nextReviewDate` by the review interval. If the project has no
 > review interval set, setting one first is recommended.
 
+## Crissy State Block (task-state / project-state)
+
+`task-state` and `project-state` read or merge a small key/value metadata block
+stored at the end of a task or project note. This lets external tooling persist
+prioritization state (slip history, a priority tier, why-it-matters context)
+that syncs across machines through OmniFocus itself — no local state file needed.
+
+The block is delimited by a sentinel line and lives at the end of the note. The
+freeform note content above the sentinel is never touched:
+
+```
+From: Circuit Daily Sync on 6/20/2026
+
+=== crissy-state ===
+priority: P1
+priority-source: auto
+slip-count: 3
+last-planned: 2026-06-23
+why: committed in sync; blocks the ADR
+```
+
+> **Why `=== crissy-state ===` and not a `###` heading?** `ofctl` strips
+> markdown heading markers when writing a note but does not re-emit them when
+> reading, so a heading sentinel would not survive the round trip. The `===`
+> sentinel contains no markdown-special characters and round-trips verbatim.
+
+```sh
+ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
+ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
+```
+
+`task-state` takes a task ID; `project-state` takes a project name. Exactly one
+mode is used per call: `--get` to read, or a mutation. `--get` cannot be
+combined with a mutation, and `--clear` (which removes the whole block) cannot
+be combined with `--set`/`--increment`/`--clear-key`.
+
+Read the parsed block as JSON (default format):
+
+```sh
+ofctl task-state abc123 --get
+```
+
+Read as plain `key: value` lines:
+
+```sh
+ofctl task-state abc123 --get --format text
+```
+
+Merge values (creates the block if absent, preserves existing keys, keeps write
+order). Values may contain colons — only the first `:` splits key from value:
+
+```sh
+ofctl task-state abc123 --set priority=P1 --set "why=committed in sync: blocks the ADR"
+```
+
+Atomically bump a numeric counter (missing or non-numeric is treated as 0):
+
+```sh
+ofctl task-state abc123 --increment slip-count
+```
+
+Remove a single key, or wipe the entire block (leaving the freeform note):
+
+```sh
+ofctl task-state abc123 --clear-key why
+ofctl task-state abc123 --clear
+```
+
+Preview any mutation without writing — prints the resulting note and state:
+
+```sh
+ofctl task-state abc123 --set priority=P2 --dry-run
+```
+
+Project state works identically against a project name:
+
+```sh
+ofctl project-state "Product Launch" --set priority=P2 --set last-reviewed=2026-06-24
+ofctl project-state "Product Launch" --get --format text
+```
+
 ## task-delete
 
 Deletes one or more tasks by OmniFocus ID. All IDs are validated first; if any
