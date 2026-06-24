@@ -171,10 +171,10 @@ struct OFCTL {
         }
 
         if object["dryRun"] as? Bool == true {
-            print("[dry-run] resulting crissy-state block:")
+            print("[dry-run] resulting state block:")
         }
         guard let state = object["state"] as? [String: Any], !state.isEmpty else {
-            print("(no crissy-state)")
+            print("(no state block)")
             return
         }
         // Preserve write order when provided; otherwise sort for stable output.

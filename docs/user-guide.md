@@ -914,12 +914,14 @@ ofctl project-review "Home Maintenance" --interval none
 > which advances `nextReviewDate` by the review interval. If the project has no
 > review interval set, setting one first is recommended.
 
-## Crissy State Block (task-state / project-state)
+## Note State Block (task-state / project-state)
 
 `task-state` and `project-state` read or merge a small key/value metadata block
 stored at the end of a task or project note. This lets external tooling persist
-prioritization state (slip history, a priority tier, why-it-matters context)
-that syncs across machines through OmniFocus itself — no local state file needed.
+structured state — for example prioritization signals such as slip history, a
+priority tier, and why-it-matters context — that syncs across machines through
+OmniFocus itself, with no local state file needed. The block is general-purpose
+and accepts any `key: value` pairs.
 
 The block is delimited by a sentinel line and lives at the end of the note. The
 freeform note content above the sentinel is never touched:
@@ -927,7 +929,7 @@ freeform note content above the sentinel is never touched:
 ```
 From: Circuit Daily Sync on 6/20/2026
 
-=== crissy-state ===
+=== ofctl-state ===
 priority: P1
 priority-source: auto
 slip-count: 3
@@ -935,7 +937,7 @@ last-planned: 2026-06-23
 why: committed in sync; blocks the ADR
 ```
 
-> **Why `=== crissy-state ===` and not a `###` heading?** `ofctl` strips
+> **Why `=== ofctl-state ===` and not a `###` heading?** `ofctl` strips
 > markdown heading markers when writing a note but does not re-emit them when
 > reading, so a heading sentinel would not survive the round trip. The `===`
 > sentinel contains no markdown-special characters and round-trips verbatim.

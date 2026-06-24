@@ -1747,7 +1747,7 @@ enum OmniJavaScript {
           \(markdownNoteSupport)
           \(privacy)
           \(taskSerializationSupport)
-          \(crissyStateSupport)
+          \(stateBlockSupport)
 
           const input = {
             identifier: \(identifier),
@@ -1772,7 +1772,7 @@ enum OmniJavaScript {
             }
           }
 
-          const parsed = parseCrissyState(noteTextToMarkdown(target.noteText));
+          const parsed = parseStateBlock(noteTextToMarkdown(target.noteText));
 
           if (input.get) {
             return JSON.stringify({
@@ -1807,7 +1807,7 @@ enum OmniJavaScript {
             ensureKey(pair.key);
           });
 
-          const newMarkdown = composeCrissyNote(parsed.freeform, stateMap, order);
+          const newMarkdown = composeStateNote(parsed.freeform, stateMap, order);
 
           if (input.dryRun) {
             return JSON.stringify({
@@ -2117,21 +2117,21 @@ function noteTextToMarkdown(noteObj) {
 }
 """#
 
-// Helpers for the crissy-state block: a delimited key/value section at the end
+// Helpers for the note state block: a delimited key/value section at the end
 // of a task or project note. The marker is intentionally NOT a markdown heading
 // ("### ...") because markdownRuns() strips heading markers on write while
 // noteTextToMarkdown() never re-emits them on read — a heading marker would not
-// survive the round trip. "=== crissy-state ===" contains no characters that the
+// survive the round trip. "=== ofctl-state ===" contains no characters that the
 // markdown converters interpret, so it round-trips verbatim.
-private let crissyStateSupport = #"""
-const CRISSY_STATE_MARKER = "=== crissy-state ===";
+private let stateBlockSupport = #"""
+const STATE_MARKER = "=== ofctl-state ===";
 
-function parseCrissyState(markdown) {
+function parseStateBlock(markdown) {
   const text = (markdown || "").replace(/\r\n/g, "\n");
   const lines = text.split("\n");
   let markerIndex = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === CRISSY_STATE_MARKER) { markerIndex = i; break; }
+    if (lines[i].trim() === STATE_MARKER) { markerIndex = i; break; }
   }
   if (markerIndex === -1) {
     return { hasBlock: false, freeform: text, state: {}, order: [] };
@@ -2154,12 +2154,12 @@ function parseCrissyState(markdown) {
   return { hasBlock: true, freeform: freeform, state: state, order: order };
 }
 
-function composeCrissyNote(freeform, state, order) {
+function composeStateNote(freeform, state, order) {
   const trimmedFreeform = (freeform || "").replace(/\s+$/, "");
   const keys = order.filter(k => state[k] !== undefined && state[k] !== null);
   if (keys.length === 0) { return trimmedFreeform; }
   const blockLines = keys.map(k => k + ": " + state[k]);
-  const block = CRISSY_STATE_MARKER + "\n" + blockLines.join("\n");
+  const block = STATE_MARKER + "\n" + blockLines.join("\n");
   if (trimmedFreeform.length === 0) { return block; }
   return trimmedFreeform + "\n\n" + block;
 }
