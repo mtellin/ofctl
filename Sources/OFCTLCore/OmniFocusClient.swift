@@ -132,6 +132,14 @@ public struct OmniFocusClient {
     public func deleteProject(_ delete: DeleteProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.deleteProject(delete, privacyScope: privacyScope))
     }
+
+    public func taskState(_ state: StateMutation) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.stateMutation(state, isProject: false, privacyScope: privacyScope))
+    }
+
+    public func projectState(_ state: StateMutation) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.stateMutation(state, isProject: true, privacyScope: privacyScope))
+    }
 }
 
 enum OmniJavaScript {
@@ -1727,6 +1735,106 @@ enum OmniJavaScript {
         """
     }
 
+    static func stateMutation(_ state: StateMutation, isProject: Bool, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let identifier = try jsonLiteral(state.identifier)
+        let sets = try jsonLiteral(state.sets.map { ["key": $0.key, "value": $0.value] })
+        let increments = try jsonLiteral(state.increments)
+        let clearKeys = try jsonLiteral(state.clearKeys)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(markdownNoteSupport)
+          \(privacy)
+          \(taskSerializationSupport)
+          \(crissyStateSupport)
+
+          const input = {
+            identifier: \(identifier),
+            isProject: \(isProject ? "true" : "false"),
+            get: \(state.get ? "true" : "false"),
+            sets: \(sets),
+            increments: \(increments),
+            clearKeys: \(clearKeys),
+            clearAll: \(state.clearAll ? "true" : "false"),
+            dryRun: \(state.dryRun ? "true" : "false")
+          };
+
+          let target;
+          if (input.isProject) {
+            target = flattenedProjects.byName(input.identifier);
+            if (!target) { throw new Error(`Project not found: ${input.identifier}`); }
+            assertProjectAvailableInPrivacyScope(target, `Project not found or not available in current privacy scope: ${input.identifier}`);
+          } else {
+            target = Task.byIdentifier(input.identifier);
+            if (!target || !taskAllowedByPrivacyScope(target)) {
+              throw new Error(`Task not found or not available in current privacy scope: ${input.identifier}`);
+            }
+          }
+
+          const parsed = parseCrissyState(noteTextToMarkdown(target.noteText));
+
+          if (input.get) {
+            return JSON.stringify({
+              id: target.id.primaryKey,
+              isProject: input.isProject,
+              hasBlock: parsed.hasBlock,
+              order: parsed.order,
+              state: parsed.state,
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          let stateMap = parsed.state;
+          let order = parsed.order.slice();
+          const ensureKey = (k) => { if (order.indexOf(k) === -1) { order.push(k); } };
+
+          if (input.clearAll) {
+            stateMap = {};
+            order = [];
+          }
+          input.clearKeys.forEach(k => {
+            delete stateMap[k];
+            order = order.filter(o => o !== k);
+          });
+          input.increments.forEach(k => {
+            const current = parseInt(stateMap[k], 10);
+            stateMap[k] = String((Number.isNaN(current) ? 0 : current) + 1);
+            ensureKey(k);
+          });
+          input.sets.forEach(pair => {
+            stateMap[pair.key] = pair.value;
+            ensureKey(pair.key);
+          });
+
+          const newMarkdown = composeCrissyNote(parsed.freeform, stateMap, order);
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              id: target.id.primaryKey,
+              isProject: input.isProject,
+              order: order,
+              state: stateMap,
+              note: newMarkdown,
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          setMarkdownNote(target, newMarkdown);
+
+          return JSON.stringify({
+            id: target.id.primaryKey,
+            isProject: input.isProject,
+            order: order,
+            state: stateMap,
+            note: newMarkdown,
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
     private static func jsonLiteral<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
         let data = try encoder.encode(value)
@@ -2006,6 +2114,54 @@ function noteTextToMarkdown(noteObj) {
   }).join("");
 
   return normalizeOmniMarkdown(markdown);
+}
+"""#
+
+// Helpers for the crissy-state block: a delimited key/value section at the end
+// of a task or project note. The marker is intentionally NOT a markdown heading
+// ("### ...") because markdownRuns() strips heading markers on write while
+// noteTextToMarkdown() never re-emits them on read — a heading marker would not
+// survive the round trip. "=== crissy-state ===" contains no characters that the
+// markdown converters interpret, so it round-trips verbatim.
+private let crissyStateSupport = #"""
+const CRISSY_STATE_MARKER = "=== crissy-state ===";
+
+function parseCrissyState(markdown) {
+  const text = (markdown || "").replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+  let markerIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === CRISSY_STATE_MARKER) { markerIndex = i; break; }
+  }
+  if (markerIndex === -1) {
+    return { hasBlock: false, freeform: text, state: {}, order: [] };
+  }
+  const freeform = lines.slice(0, markerIndex).join("\n").replace(/\s+$/, "");
+  const state = {};
+  const order = [];
+  for (let i = markerIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length === 0) { continue; }
+    const colon = line.indexOf(":");
+    if (colon <= 0) { continue; }
+    const key = line.slice(0, colon).trim();
+    let value = line.slice(colon + 1);
+    if (value.startsWith(" ")) { value = value.slice(1); }
+    if (key.length === 0) { continue; }
+    if (!Object.prototype.hasOwnProperty.call(state, key)) { order.push(key); }
+    state[key] = value;
+  }
+  return { hasBlock: true, freeform: freeform, state: state, order: order };
+}
+
+function composeCrissyNote(freeform, state, order) {
+  const trimmedFreeform = (freeform || "").replace(/\s+$/, "");
+  const keys = order.filter(k => state[k] !== undefined && state[k] !== null);
+  if (keys.length === 0) { return trimmedFreeform; }
+  const blockLines = keys.map(k => k + ": " + state[k]);
+  const block = CRISSY_STATE_MARKER + "\n" + blockLines.join("\n");
+  if (trimmedFreeform.length === 0) { return block; }
+  return trimmedFreeform + "\n\n" + block;
 }
 """#
 

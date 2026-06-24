@@ -39,6 +39,8 @@ public struct CommandLineOptions: Equatable {
         case projectDelete(DeleteProject)
         case projects(ProjectsQuery)
         case projectReview(UpdateProjectReview)
+        case taskState(StateMutation)
+        case projectState(StateMutation)
     }
 
     public var command: Command
@@ -272,6 +274,51 @@ public struct UpdateProjectReview: Equatable {
     public var dryRun: Bool
 }
 
+public struct StateAssignment: Equatable {
+    public var key: String
+    public var value: String
+
+    public init(key: String, value: String) {
+        self.key = key
+        self.value = value
+    }
+}
+
+/// Read or merge the delimited `### crissy-state` block inside a task or
+/// project note. `identifier` is a task id for `task-state` and a project name
+/// for `project-state`. Exactly one mode is used per invocation: `get` (read)
+/// or a mutation (`sets`/`increments`/`clearKeys`/`clearAll`).
+public struct StateMutation: Equatable {
+    public var identifier: String
+    public var get: Bool
+    public var sets: [StateAssignment]
+    public var increments: [String]
+    public var clearKeys: [String]
+    public var clearAll: Bool
+    public var format: OutputFormat
+    public var dryRun: Bool
+
+    public init(
+        identifier: String,
+        get: Bool = false,
+        sets: [StateAssignment] = [],
+        increments: [String] = [],
+        clearKeys: [String] = [],
+        clearAll: Bool = false,
+        format: OutputFormat = .json,
+        dryRun: Bool = false
+    ) {
+        self.identifier = identifier
+        self.get = get
+        self.sets = sets
+        self.increments = increments
+        self.clearKeys = clearKeys
+        self.clearAll = clearAll
+        self.format = format
+        self.dryRun = dryRun
+    }
+}
+
 public enum ProjectStatus: String, Equatable {
     case active
     case onHold = "on-hold"
@@ -323,6 +370,13 @@ public enum CLI {
       ofctl project-delete PROJECT_NAME [--dry-run]
       ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
       ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
+      ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
+      ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
+
+    Crissy state block:
+      task-state and project-state read or merge a delimited "=== crissy-state ===" block at the end of
+      a note (key: value lines) without disturbing the freeform note content above it. Use --get to
+      read the parsed block, --set/--increment/--clear-key to merge, and --clear to remove the block.
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -390,6 +444,10 @@ public enum CLI {
             return try CommandLineOptions(command: .projects(parseProjectsQuery(args)))
         case "project-review":
             return try CommandLineOptions(command: .projectReview(parseUpdateProjectReview(args)))
+        case "task-state":
+            return try CommandLineOptions(command: .taskState(parseStateMutation(args, command: "task-state")))
+        case "project-state":
+            return try CommandLineOptions(command: .projectState(parseStateMutation(args, command: "project-state")))
         default:
             throw CLIError.usage("Unknown command: \(command)\n\n\(help)")
         }
@@ -1052,6 +1110,75 @@ public enum CLI {
         }
 
         return UpdateProjectReview(project: project, markReviewed: markReviewed, interval: interval, dryRun: dryRun)
+    }
+
+    private static func parseStateMutation(_ args: [String], command: String) throws -> StateMutation {
+        var parser = OptionParser(args)
+        let idLabel = command == "project-state" ? "a project name" : "a task id"
+        guard let identifier = parser.next(), !identifier.hasPrefix("--") else {
+            throw CLIError.usage("\(command) requires \(idLabel)\n\n\(help)")
+        }
+
+        var get = false
+        var sets: [StateAssignment] = []
+        var increments: [String] = []
+        var clearKeys: [String] = []
+        var clearAll = false
+        var format = OutputFormat.json
+        var dryRun = false
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--get":
+                get = true
+            case "--set":
+                let pair = try parser.value(after: arg)
+                guard let eq = pair.firstIndex(of: "="), eq != pair.startIndex else {
+                    throw CLIError.usage("--set requires KEY=VALUE (got: \(pair))")
+                }
+                let key = String(pair[pair.startIndex..<eq])
+                let value = String(pair[pair.index(after: eq)...])
+                sets.append(StateAssignment(key: key, value: value))
+            case "--increment":
+                increments.append(try parser.value(after: arg))
+            case "--clear-key":
+                clearKeys.append(try parser.value(after: arg))
+            case "--clear":
+                clearAll = true
+            case "--format":
+                let value = try parser.value(after: arg)
+                guard let parsed = OutputFormat(rawValue: value) else {
+                    throw CLIError.usage("Unsupported format: \(value)")
+                }
+                format = parsed
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for \(command): \(arg)")
+            }
+        }
+
+        let hasMutation = !sets.isEmpty || !increments.isEmpty || !clearKeys.isEmpty || clearAll
+        if get && hasMutation {
+            throw CLIError.usage("\(command): --get cannot be combined with --set/--increment/--clear-key/--clear")
+        }
+        if !get && !hasMutation {
+            throw CLIError.usage("\(command) requires --get or at least one of --set/--increment/--clear-key/--clear")
+        }
+        if clearAll && (!sets.isEmpty || !increments.isEmpty || !clearKeys.isEmpty) {
+            throw CLIError.usage("\(command): --clear wipes the whole block and cannot be combined with --set/--increment/--clear-key")
+        }
+
+        return StateMutation(
+            identifier: identifier,
+            get: get,
+            sets: sets,
+            increments: increments,
+            clearKeys: clearKeys,
+            clearAll: clearAll,
+            format: format,
+            dryRun: dryRun
+        )
     }
 
     private static func parseDeleteTasks(_ args: [String]) throws -> DeleteTasks {

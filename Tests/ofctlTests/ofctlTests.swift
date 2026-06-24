@@ -1467,3 +1467,68 @@ private func defaultUpdateTask() -> UpdateTask {
     #expect(!OmniJavaScriptRunner.isTransientAutomationMessage("Task not found: abc123"))
     #expect(!OmniJavaScriptRunner.isTransientAutomationMessage("Project not found: Foo"))
 }
+
+@Test func parsesTaskStateGet() throws {
+    let options = try CLI.parse(["ofctl", "task-state", "abc123", "--get", "--format", "json"])
+
+    #expect(options == CommandLineOptions(command: .taskState(StateMutation(
+        identifier: "abc123",
+        get: true,
+        format: .json
+    ))))
+}
+
+@Test func parsesTaskStateSetIncrementClearKey() throws {
+    let options = try CLI.parse([
+        "ofctl", "task-state", "abc123",
+        "--set", "priority=P1",
+        "--set", "why=committed via sync: blocks Brian",
+        "--increment", "slip-count",
+        "--clear-key", "stale",
+        "--dry-run"
+    ])
+
+    #expect(options == CommandLineOptions(command: .taskState(StateMutation(
+        identifier: "abc123",
+        sets: [
+            StateAssignment(key: "priority", value: "P1"),
+            StateAssignment(key: "why", value: "committed via sync: blocks Brian")
+        ],
+        increments: ["slip-count"],
+        clearKeys: ["stale"],
+        dryRun: true
+    ))))
+}
+
+@Test func parsesProjectStateClear() throws {
+    let options = try CLI.parse(["ofctl", "project-state", "My Project", "--clear"])
+
+    #expect(options == CommandLineOptions(command: .projectState(StateMutation(
+        identifier: "My Project",
+        clearAll: true
+    ))))
+}
+
+@Test func rejectsStateWithGetAndMutation() throws {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-state", "abc123", "--get", "--set", "priority=P1"])
+    }
+}
+
+@Test func rejectsStateWithNoOperation() throws {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-state", "abc123"])
+    }
+}
+
+@Test func rejectsStateClearCombinedWithSet() throws {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-state", "abc123", "--clear", "--set", "priority=P1"])
+    }
+}
+
+@Test func rejectsStateMalformedSet() throws {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-state", "abc123", "--set", "noequalsign"])
+    }
+}

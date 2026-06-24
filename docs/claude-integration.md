@@ -40,6 +40,7 @@ The command surface is intentionally narrow:
 - `project-delete PROJECT_NAME` to delete a project; always `--dry-run` first
 - `projects` to list projects with review dates; `--due-for-review` is useful for surfacing overdue reviews
 - `project-review PROJECT_NAME --mark-reviewed` to advance the review date; use `--interval SPEC` (e.g. `1w`) to set a recurring interval
+- `task-state TASK_ID` / `project-state PROJECT_NAME` to read (`--get`) or merge (`--set KEY=VALUE`, `--increment KEY`, `--clear-key KEY`, `--clear`) a delimited `=== crissy-state ===` metadata block in the note without clobbering its freeform content
 
 This is easier to review and approve than general-purpose application
 automation or a full OmniFocus MCP server.
@@ -266,6 +267,19 @@ Controlled project status updates:
 
 ```sh
 ofctl project-status "$PROJECT_NAME" --status on-hold --dry-run
+```
+
+Read or merge the crissy-state metadata block (persists prioritization state in
+the note so it syncs across machines; never use `update --note` for this — that
+replaces the whole note):
+
+```sh
+ofctl task-state "$TASK_ID" --get
+ofctl task-state "$TASK_ID" --get --format text
+ofctl task-state "$TASK_ID" --set priority=P1 --set "why=committed in sync: blocks ADR" --dry-run
+ofctl task-state "$TASK_ID" --increment slip-count
+ofctl task-state "$TASK_ID" --clear-key why
+ofctl project-state "$PROJECT_NAME" --set priority=P2 --set last-reviewed=2026-06-24
 ```
 
 Controlled project moves (destination must be within the `Work` folder under
