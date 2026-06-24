@@ -224,22 +224,25 @@ Include source context when migrating:
 Source: Markdown task note - tasks/Ask Alex for project status.md
 ```
 
-## Crissy State Block
+## Note State Block
 
-Automated planning tooling may persist a small key/value metadata block at the
-end of a task or project note, delimited by a `=== crissy-state ===` sentinel
-line. This keeps prioritization state (slip history, a priority tier,
-why-it-matters context) in OmniFocus itself so it syncs across machines rather
-than living in a local file.
+Automated tooling may persist a small key/value metadata block at the end of a
+task or project note, delimited by a `=== ofctl-state ===` sentinel line. This
+keeps structured state (for example prioritization signals such as slip history,
+a priority tier, and why-it-matters context) in OmniFocus itself so it syncs
+across machines rather than living in a local file.
 
 Manage the block with `task-state` / `project-state` (see the user guide) — do
 not hand-edit it through `--note`, which replaces the whole note. The freeform
 note content above the sentinel is preserved across state writes.
 
+The keys below are an example convention used by one consumer; the block itself
+is general-purpose and accepts any `key: value` pairs.
+
 ```text
 From: Circuit Daily Sync on 6/20/2026
 
-=== crissy-state ===
+=== ofctl-state ===
 priority: P1
 priority-source: auto
 slip-count: 3

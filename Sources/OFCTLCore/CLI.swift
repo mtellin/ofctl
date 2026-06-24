@@ -284,9 +284,9 @@ public struct StateAssignment: Equatable {
     }
 }
 
-/// Read or merge the delimited `### crissy-state` block inside a task or
-/// project note. `identifier` is a task id for `task-state` and a project name
-/// for `project-state`. Exactly one mode is used per invocation: `get` (read)
+/// Read or merge the delimited `=== ofctl-state ===` key/value block inside a
+/// task or project note. `identifier` is a task id for `task-state` and a project
+/// name for `project-state`. Exactly one mode is used per invocation: `get` (read)
 /// or a mutation (`sets`/`increments`/`clearKeys`/`clearAll`).
 public struct StateMutation: Equatable {
     public var identifier: String
@@ -373,8 +373,8 @@ public enum CLI {
       ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
       ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
 
-    Crissy state block:
-      task-state and project-state read or merge a delimited "=== crissy-state ===" block at the end of
+    Note state block:
+      task-state and project-state read or merge a delimited "=== ofctl-state ===" block at the end of
       a note (key: value lines) without disturbing the freeform note content above it. Use --get to
       read the parsed block, --set/--increment/--clear-key to merge, and --clear to remove the block.
 
