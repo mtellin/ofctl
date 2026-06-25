@@ -637,6 +637,7 @@ enum OmniJavaScript {
         let ids = try jsonLiteral(task.ids)
         let name = try jsonLiteral(task.name)
         let project = optionalJSONAssignment(task.project)
+        let folder = try jsonLiteral(task.folder)
         let addTags = try jsonLiteral(task.addTags)
         let removeTags = try jsonLiteral(task.removeTags)
         let clearTags = task.clearTags ? "true" : "false"
@@ -658,11 +659,13 @@ enum OmniJavaScript {
           \(markdownNoteSupport)
           \(privacy)
           \(taskSerializationSupport)
+          \(folderSupport)
 
           const input = {
             ids: \(ids),
             name: \(name),
             project: \(project),
+            folder: \(folder),
             addTags: \(addTags),
             removeTags: \(removeTags),
             clearTags: \(clearTags),
@@ -728,16 +731,43 @@ enum OmniJavaScript {
             return tag;
           }
 
+          const allowedFolderList = Array.from(privacyAllowedFolderNames);
+          const effectiveFolder = input.folder !== null
+            ? input.folder
+            : ((privacyScope && allowedFolderList.length === 1) ? allowedFolderList[0] : null);
+
           function existingProjectNamed(name) {
             if (!name) { return { project: null, created: false }; }
+            if (effectiveFolder !== null) {
+              const folder = folderForPath(effectiveFolder);
+              const folderProjectMatches = flattenedProjects.filter(project => (
+                project.name === name && projectFolderNamesForProject(project).join("/") === folderPath(folder).join("/")
+              ));
+              if (folderProjectMatches.length === 1) { return { project: folderProjectMatches[0], created: false }; }
+              if (folderProjectMatches.length > 1) {
+                throw new Error(`Ambiguous project in folder: ${effectiveFolder}/${name}`);
+              }
+              return { project: null, created: false };
+            }
             const project = flattenedProjects.byName(name);
             return { project, created: false };
           }
 
           function projectNamedOrCreated(name) {
             if (!name) { return { project: null, created: false }; }
-            const existing = flattenedProjects.byName(name);
+            const existingResult = existingProjectNamed(name);
+            const existing = existingResult.project;
             if (existing) { return { project: existing, created: false }; }
+            if (effectiveFolder !== null) {
+              const folder = folderForPath(effectiveFolder);
+              if (!folderAllowedByPrivacyScope(folder)) {
+                throw new Error(`Destination folder not available in current privacy scope: ${effectiveFolder}`);
+              }
+              return { project: new Project(name, folder.ending), created: true };
+            }
+            if (privacyScope) {
+              throw new Error(`Creating a project at the top level is not allowed in the current privacy scope`);
+            }
             return { project: new Project(name, library.ending), created: true };
           }
 
@@ -749,15 +779,13 @@ enum OmniJavaScript {
             return t;
           });
 
-          const dryRunProject = input.project === undefined || input.project === null
+          const resolvedProjectResult = input.project === undefined || input.project === null
             ? { project: null, created: false }
             : existingProjectNamed(input.project);
-          if (privacyScope && input.project !== undefined && input.project !== null) {
-            if (!dryRunProject.project || !projectAllowedByPrivacyScope(dryRunProject.project)) {
-              throw new Error(`Project not found or not available in current privacy scope: ${input.project}`);
-            }
+          if (privacyScope && resolvedProjectResult.project && !projectAllowedByPrivacyScope(resolvedProjectResult.project)) {
+            throw new Error(`Project not found or not available in current privacy scope: ${input.project}`);
           }
-          if (!input.createProjectIfMissing && input.project !== undefined && input.project !== null && !dryRunProject.project) {
+          if (!input.createProjectIfMissing && input.project !== undefined && input.project !== null && !resolvedProjectResult.project) {
             throw new Error(`Project not found: ${input.project}`);
           }
           const dryRunAddTags = input.addTags.map(name => existingTagNamedOrPath(name));
@@ -769,8 +797,9 @@ enum OmniJavaScript {
               tasks: resolvedTasks.map(t => ({ id: t.id.primaryKey, name: t.name })),
               meta: {
                 privacyScope,
-                projectExists: input.project !== undefined && input.project !== null ? dryRunProject.project !== null : null,
-                wouldCreateProject: input.project !== undefined && input.project !== null && dryRunProject.project === null,
+                projectExists: input.project !== undefined && input.project !== null ? resolvedProjectResult.project !== null : null,
+                wouldCreateProject: input.project !== undefined && input.project !== null && resolvedProjectResult.project === null && input.createProjectIfMissing,
+                folder: input.project !== undefined && input.project !== null ? effectiveFolder : null,
                 addTags: dryRunAddTags.map(result => ({
                   input: result.input,
                   exists: result.tag !== null,

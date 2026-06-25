@@ -512,6 +512,81 @@ import Testing
     ))))
 }
 
+@Test func rejectsUpdateTaskFolderWithoutProject() throws {
+    do {
+        _ = try CLI.parse(["ofctl", "update", "abc123", "--folder", "Work"])
+        Issue.record("Expected --folder without --project to fail")
+    } catch let error as CLIError {
+        #expect(error == .usage("--folder requires --project"))
+    }
+}
+
+@Test func parsesUpdateTaskWithProjectAndFolder() throws {
+    let options = try CLI.parse([
+        "ofctl", "update", "abc123", "def456",
+        "--project", "Q3 Planning",
+        "--folder", "Work",
+    ])
+
+    #expect(options == CommandLineOptions(command: .update(UpdateTask(
+        ids: ["abc123", "def456"],
+        name: nil,
+        project: .some("Q3 Planning"),
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        folder: "Work",
+        dryRun: false
+    ))))
+}
+
+@Test func parsesUpdateTaskWithFolderAndNoCreateProject() throws {
+    let options = try CLI.parse([
+        "ofctl", "update", "abc123",
+        "--project", "Existing Project",
+        "--folder", "Work",
+        "--no-create-project",
+    ])
+
+    #expect(options == CommandLineOptions(command: .update(UpdateTask(
+        ids: ["abc123"],
+        name: nil,
+        project: .some("Existing Project"),
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        createProjectIfMissing: false,
+        folder: "Work",
+        dryRun: false
+    ))))
+}
+
 @Test func parsesUpdateTaskWithRepeatRule() throws {
     let options = try CLI.parse([
         "ofctl", "update", "abc123",
@@ -1262,7 +1337,10 @@ import Testing
     #expect(addScript.contains("assertAddDestinationAvailable(dryRunProject, parentTask);"))
     #expect(addScript.contains("assertTaskAvailableInPrivacyScope(parentTask"))
     #expect(updateScript.contains("!t || !taskAllowedByPrivacyScope(t)"))
-    #expect(updateScript.contains("!dryRunProject.project || !projectAllowedByPrivacyScope(dryRunProject.project)"))
+    #expect(updateScript.contains("resolvedProjectResult.project && !projectAllowedByPrivacyScope(resolvedProjectResult.project)"))
+    // update mirrors add: folder-aware create + top-level guard under privacy scope
+    #expect(updateScript.contains("folderAllowedByPrivacyScope(folder)"))
+    #expect(updateScript.contains("Creating a project at the top level is not allowed in the current privacy scope"))
     #expect(moveTasksScript.contains("!task || !taskAllowedByPrivacyScope(task)"))
     #expect(moveTasksScript.contains("assertNoSourceTargetConflict(resolvedTasks, targetTask"))
     #expect(moveTasksScript.contains("moveTasks(resolvedTasks, destinationLocation)"))
