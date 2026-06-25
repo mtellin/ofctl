@@ -554,14 +554,27 @@ ofctl update TASK_ID --repeat-rule "FREQ=MONTHLY;INTERVAL=1" --repeat-method fix
 ofctl update TASK_ID --repeat-rule none
 ```
 
-Move to another project:
+Move one or more tasks to another project (pass multiple ids to move them all):
 
 ```sh
-ofctl update TASK_ID --project "Work Follow-ups"
+ofctl update TASK_ID [TASK_ID ...] --project "Work Follow-ups"
 ```
 
-If the named project does not exist, `ofctl` creates it as a top-level
-OmniFocus project before moving the task.
+If the named project does not exist, `ofctl` creates it before moving the
+task(s). Without a privacy scope it is created as a top-level project. To place
+the new project in a folder, add `--folder` (same semantics as `add --folder`):
+
+```sh
+ofctl update TASK_ID TASK_ID --project "Q3 Planning" --folder "Work/Planning"
+```
+
+When a privacy scope is active and allows exactly one folder (for example a work
+scope that allows only `Work`), `update` creates new projects in that folder
+automatically — so `--folder` is optional in that case:
+
+```sh
+ofctl update TASK_ID TASK_ID --project "Q3 Planning"   # creates inside Work
+```
 
 Require the project to already exist:
 

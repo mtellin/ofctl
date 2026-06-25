@@ -26,7 +26,7 @@ The command surface is intentionally narrow:
 - `perspectives` for discovering built-in and custom OmniFocus views
 - `add` for task creation
 - `add-group` for action group creation
-- `update` for controlled edits
+- `update` for controlled edits, including moving one or more tasks into a project; `--project` auto-creates a missing project (use `--folder` to place it in a folder, or rely on the single-folder default inside a privacy scope), so a separate `project-create` step is usually unnecessary when moving tasks
 - `task-rename TASK_ID --to NEW_NAME` for task-only renames
 - `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes
@@ -223,6 +223,7 @@ Controlled task updates:
 ofctl update "$TASK_ID" --add-tag "Waiting On" --dry-run
 ofctl update "$TASK_ID" --remove-tag "Waiting On" --dry-run
 ofctl update "$TASK_ID" --project none --dry-run
+ofctl update "$TASK_ID" --project "$PROJECT_NAME" --folder "$FOLDER_PATH" --dry-run
 ofctl update "$TASK_ID" --repeat-rule "FREQ=WEEKLY;INTERVAL=1" --repeat-method fixed --dry-run
 ofctl update "$TASK_ID" --repeat-rule none --dry-run
 ofctl update "$TASK_ID" --complete --dry-run

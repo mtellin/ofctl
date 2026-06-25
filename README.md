@@ -168,6 +168,12 @@ ofctl update TASK_ID --flag
 ofctl update TASK_ID --no-flag
 ```
 
+Move several tasks into a brand-new project (auto-created), placing it in a folder:
+
+```sh
+ofctl update TASK_ID_1 TASK_ID_2 --project "Q3 Planning" --folder "Work/Planning"
+```
+
 Reorder or move tasks:
 
 ```sh
@@ -252,10 +258,11 @@ ofctl project-delete "Home Maintenance"
   settings, flag state, or a parent action group.
 - `ofctl add-group`: create an action group, optionally sequential/parallel and
   optionally completed by its children.
-- `ofctl update`: update one or more tasks by ID — name, project, tags, dates,
-  repeat rule, duration, notes, completion state, dropped state, flag state,
-  action group settings, skipped repeating occurrences, and optional
-  `--no-create-project` protection when moving to a project.
+- `ofctl update`: update one or more tasks by ID — name, project (with optional
+  `--folder` to create/target the project in a folder), tags, dates, repeat rule,
+  duration, notes, completion state, dropped state, flag state, action group
+  settings, skipped repeating occurrences, and optional `--no-create-project`
+  protection when moving to a project.
 - `ofctl task-rename`: rename one task by ID using OmniFocus's native task
   name property.
 - `ofctl task-move`: reorder one or more tasks before/after another task, or
