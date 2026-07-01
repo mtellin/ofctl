@@ -36,6 +36,8 @@ struct OFCTL {
                 print(try client.moveProject(move))
             case .projectRename(let rename):
                 print(try client.renameProject(rename))
+            case .projectNote(let update):
+                print(try client.updateProjectNote(update))
             case .projectCompletion(let update):
                 print(try client.updateProjectCompletion(update))
             case .projectCreate(let create):
@@ -137,6 +139,10 @@ struct OFCTL {
             let nextReview = project["nextReviewDate"] as? String ?? "none"
             let location = folder.isEmpty ? "library" : folder
             print("- \(name) [status: \(status)] [folder: \(location)] [next review: \(nextReview)]")
+            if let note = project["note"] as? String {
+                let firstLine = note.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+                print("    note: \(firstLine.isEmpty ? "(empty)" : firstLine)")
+            }
         }
     }
 

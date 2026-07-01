@@ -27,6 +27,7 @@ public struct CommandLineOptions: Equatable {
         case projectStatus(UpdateProjectStatus)
         case projectMove(MoveProject)
         case projectRename(RenameProject)
+        case projectNote(UpdateProjectNote)
         case projectCompletion(UpdateProjectCompletion)
         case projectCreate(CreateProject)
         case folderCreate(CreateFolder)
@@ -183,6 +184,22 @@ public struct RenameProject: Equatable {
     public var dryRun: Bool
 }
 
+public enum ProjectNoteMode: String, Equatable {
+    case set
+    case prepend
+    case clear
+}
+
+/// Set, prepend to, or clear a project's freeform note. The trailing
+/// `=== ofctl-state ===` block (if any) is always preserved — only the freeform
+/// region above it is affected. `project` may be a name or a primary-key id.
+public struct UpdateProjectNote: Equatable {
+    public var project: String
+    public var mode: ProjectNoteMode
+    public var text: String
+    public var dryRun: Bool
+}
+
 public struct UpdateProjectCompletion: Equatable {
     public var project: String
     public var completeWithLastAction: Bool
@@ -266,6 +283,7 @@ public struct ProjectsQuery: Equatable {
     public var dueForReview: Bool
     public var limit: Int?
     public var format: OutputFormat
+    public var includeNotes: Bool = false
 }
 
 public struct UpdateProjectReview: Equatable {
@@ -359,6 +377,7 @@ public enum CLI {
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
       ofctl project-move PROJECT_NAME --to-folder FOLDER_NAME|none [--dry-run]
       ofctl project-rename PROJECT_NAME --to NEW_NAME [--dry-run]
+      ofctl project-note PROJECT_NAME_OR_ID (--note TEXT|--note-file PATH|--prepend TEXT|--note none) [--dry-run]
       ofctl project-completion PROJECT_NAME (--complete-with-last-action|--no-complete-with-last-action) [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
       ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
@@ -369,7 +388,7 @@ public enum CLI {
       ofctl tag-move TAG_PATH --to-parent TAG_PATH|none [--dry-run]
       ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
       ofctl project-delete PROJECT_NAME [--dry-run]
-      ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
+      ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--include-notes] [--format json|text]
       ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
       ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
       ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
@@ -421,6 +440,8 @@ public enum CLI {
             return try CommandLineOptions(command: .projectMove(parseMoveProject(args)))
         case "project-rename":
             return try CommandLineOptions(command: .projectRename(parseRenameProject(args)))
+        case "project-note":
+            return try CommandLineOptions(command: .projectNote(parseProjectNote(args)))
         case "project-completion":
             return try CommandLineOptions(command: .projectCompletion(parseUpdateProjectCompletion(args)))
         case "project-create":
@@ -990,6 +1011,51 @@ public enum CLI {
         return RenameProject(project: project, newName: newName, dryRun: dryRun)
     }
 
+    private static func parseProjectNote(_ args: [String]) throws -> UpdateProjectNote {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-note requires a project name or id\n\n\(help)")
+        }
+
+        var mode: ProjectNoteMode?
+        var text = ""
+        var dryRun = false
+
+        func setOperation(_ newMode: ProjectNoteMode, _ value: String) throws {
+            guard mode == nil else {
+                throw CLIError.usage("project-note accepts exactly one of --note, --note-file, or --prepend")
+            }
+            mode = newMode
+            text = value
+        }
+
+        while let arg = parser.next() {
+            switch arg {
+            case "--note":
+                let value = try parser.value(after: arg)
+                if value == "none" {
+                    try setOperation(.clear, "")
+                } else {
+                    try setOperation(.set, value)
+                }
+            case "--note-file":
+                try setOperation(.set, try readNoteFile(try parser.value(after: arg)))
+            case "--prepend":
+                try setOperation(.prepend, try parser.value(after: arg))
+            case "--dry-run":
+                dryRun = true
+            default:
+                throw CLIError.usage("Unexpected argument for project-note: \(arg)")
+            }
+        }
+
+        guard let mode else {
+            throw CLIError.usage("project-note requires one of --note TEXT, --note-file PATH, --prepend TEXT, or --note none")
+        }
+
+        return UpdateProjectNote(project: project, mode: mode, text: text, dryRun: dryRun)
+    }
+
     private static func parseUpdateProjectCompletion(_ args: [String]) throws -> UpdateProjectCompletion {
         var parser = OptionParser(args)
         guard let project = parser.next(), !project.hasPrefix("--") else {
@@ -1078,6 +1144,8 @@ public enum CLI {
                 query.limit = limit
             case "--all":
                 query.limit = nil
+            case "--include-notes":
+                query.includeNotes = true
             case "--format":
                 let value = try parser.value(after: arg)
                 guard let format = OutputFormat(rawValue: value) else {

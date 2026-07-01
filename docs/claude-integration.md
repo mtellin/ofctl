@@ -31,6 +31,7 @@ The command surface is intentionally narrow:
 - `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes
 - `project-rename PROJECT_NAME --to NEW_NAME` for native project renames
+- `project-note PROJECT_NAME_OR_ID` to set (`--note TEXT` / `--note-file PATH`), prepend (`--prepend TEXT`), or clear (`--note none`) a project's freeform note; accepts a project name or id, and preserves any trailing `=== ofctl-state ===` block (unlike task `--note`, which replaces the whole note). Use `--prepend` to add a reference link (e.g. an `obsidian://` deep link) to the top of a project that maps 1:1 to an external note
 - `project-completion PROJECT_NAME --complete-with-last-action|--no-complete-with-last-action` for the project "Complete with last action" flag on parallel/sequential projects
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
@@ -38,7 +39,7 @@ The command surface is intentionally narrow:
 - `tag-create`, `tag-rename`, `tag-delete`, `tag-move` for tag management; always use `--dry-run` before `tag-delete` to confirm the blast radius
 - `task-delete TASK_ID [TASK_ID ...]` to delete tasks; always `--dry-run` first and confirm IDs with the user before deleting
 - `project-delete PROJECT_NAME` to delete a project; always `--dry-run` first
-- `projects` to list projects with review dates; `--due-for-review` is useful for surfacing overdue reviews
+- `projects` to list projects with review dates; `--due-for-review` is useful for surfacing overdue reviews. Add `--include-notes` to read each project's note (e.g. to find a project's linked reference note)
 - `project-review PROJECT_NAME --mark-reviewed` to advance the review date; use `--interval SPEC` (e.g. `1w`) to set a recurring interval
 - `task-state TASK_ID` / `project-state PROJECT_NAME` to read (`--get`) or merge (`--set KEY=VALUE`, `--increment KEY`, `--clear-key KEY`, `--clear`) a delimited `=== ofctl-state ===` metadata block in the note without clobbering its freeform content
 
@@ -281,6 +282,16 @@ ofctl task-state "$TASK_ID" --set priority=P1 --set "why=committed in sync: bloc
 ofctl task-state "$TASK_ID" --increment slip-count
 ofctl task-state "$TASK_ID" --clear-key why
 ofctl project-state "$PROJECT_NAME" --set priority=P2 --set last-reviewed=2026-06-24
+```
+
+Read and edit a project's freeform note without disturbing its state block (the
+`project-note` freeform edit and the `project-state` block edit are independent
+and compose safely):
+
+```sh
+ofctl projects --folder "$FOLDER" --include-notes --format text
+ofctl project-note "$PROJECT_NAME_OR_ID" --prepend "[Notes](obsidian://open?vault=Home&file=$ENCODED)"
+ofctl project-note "$PROJECT_NAME_OR_ID" --note none
 ```
 
 Controlled project moves (destination must be within the `Work` folder under

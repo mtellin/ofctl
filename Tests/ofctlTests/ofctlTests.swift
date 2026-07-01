@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import OFCTLCore
 
@@ -1131,6 +1132,84 @@ import Testing
         limit: nil,
         format: .json
     ))))
+}
+
+@Test func parsesProjectsQueryIncludeNotes() throws {
+    let options = try CLI.parse(["ofctl", "projects", "--include-notes"])
+    #expect(options == CommandLineOptions(command: .projects(ProjectsQuery(
+        folder: nil,
+        status: nil,
+        dueForReview: false,
+        limit: 100,
+        format: .json,
+        includeNotes: true
+    ))))
+}
+
+@Test func parsesProjectNoteSet() throws {
+    let options = try CLI.parse(["ofctl", "project-note", "My Project", "--note", "hello"])
+    #expect(options == CommandLineOptions(command: .projectNote(UpdateProjectNote(
+        project: "My Project",
+        mode: .set,
+        text: "hello",
+        dryRun: false
+    ))))
+}
+
+@Test func parsesProjectNoteByIdWithPrependAndDryRun() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-note", "abc123XYZ",
+        "--prepend", "[ref](obsidian://x)",
+        "--dry-run",
+    ])
+    #expect(options == CommandLineOptions(command: .projectNote(UpdateProjectNote(
+        project: "abc123XYZ",
+        mode: .prepend,
+        text: "[ref](obsidian://x)",
+        dryRun: true
+    ))))
+}
+
+@Test func parsesProjectNoteClear() throws {
+    let options = try CLI.parse(["ofctl", "project-note", "My Project", "--note", "none"])
+    #expect(options == CommandLineOptions(command: .projectNote(UpdateProjectNote(
+        project: "My Project",
+        mode: .clear,
+        text: "",
+        dryRun: false
+    ))))
+}
+
+@Test func parsesProjectNoteFromFile() throws {
+    let path = NSTemporaryDirectory() + "ofctl-note-\(UUID().uuidString).md"
+    try "from a file".write(toFile: path, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let options = try CLI.parse(["ofctl", "project-note", "My Project", "--note-file", path])
+    #expect(options == CommandLineOptions(command: .projectNote(UpdateProjectNote(
+        project: "My Project",
+        mode: .set,
+        text: "from a file",
+        dryRun: false
+    ))))
+}
+
+@Test func projectNoteRejectsMultipleOperations() throws {
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "project-note", "My Project", "--note", "a", "--prepend", "b"])
+    }
+}
+
+@Test func projectNoteRequiresAnOperation() throws {
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "project-note", "My Project"])
+    }
+}
+
+@Test func projectNoteRequiresProject() throws {
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "project-note", "--note", "a"])
+    }
 }
 
 @Test func parsesProjectReview() throws {

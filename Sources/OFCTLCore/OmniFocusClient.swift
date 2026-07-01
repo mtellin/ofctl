@@ -85,6 +85,10 @@ public struct OmniFocusClient {
         try runner.runOmniJavaScript(OmniJavaScript.renameProject(rename, privacyScope: privacyScope))
     }
 
+    public func updateProjectNote(_ update: UpdateProjectNote) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.updateProjectNote(update, privacyScope: privacyScope))
+    }
+
     public func updateProjectCompletion(_ update: UpdateProjectCompletion) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.updateProjectCompletion(update, privacyScope: privacyScope))
     }
@@ -1400,12 +1404,14 @@ enum OmniJavaScript {
         return """
         (() => {
           \(privacy)
+          \(markdownNoteSupport)
           \(taskSerializationSupport)
           \(projectSerializationSupport)
 
           const folderFilter = \(folder);
           const statusFilter = \(status);
           const dueForReview = \(query.dueForReview ? "true" : "false");
+          const includeNotes = \(query.includeNotes ? "true" : "false");
           const limit = \(limit);
           const now = new Date();
 
@@ -1418,7 +1424,7 @@ enum OmniJavaScript {
           });
 
           const returned = limit === null ? matched : matched.slice(0, limit);
-          const projects = returned.map(p => serializeProject(p));
+          const projects = returned.map(p => serializeProject(p, includeNotes));
 
           return JSON.stringify({
             projects,
@@ -1764,6 +1770,54 @@ enum OmniJavaScript {
         """
     }
 
+    static func updateProjectNote(_ update: UpdateProjectNote, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let identifier = try jsonLiteral(update.project)
+        let mode = try jsonLiteral(update.mode.rawValue)
+        let text = try jsonLiteral(update.text)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(markdownNoteSupport)
+          \(privacy)
+          \(taskSerializationSupport)
+          \(stateBlockSupport)
+          \(projectNoteSupport)
+
+          const input = {
+            identifier: \(identifier),
+            mode: \(mode),
+            text: \(text),
+            dryRun: \(update.dryRun ? "true" : "false")
+          };
+
+          let project = flattenedProjects.byName(input.identifier);
+          if (!project) {
+            project = flattenedProjects.find(p => p.id.primaryKey === input.identifier) || null;
+          }
+          if (!project) { throw new Error(`Project not found: ${input.identifier}`); }
+          assertProjectAvailableInPrivacyScope(project, `Project not found or not available in current privacy scope: ${input.identifier}`);
+
+          const newMarkdown = applyProjectNoteEdit(project, input.mode, input.text);
+
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              project: { id: project.id.primaryKey, name: project.name, note: newMarkdown },
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          setMarkdownNote(project, newMarkdown);
+
+          return JSON.stringify({
+            project: { id: project.id.primaryKey, name: project.name, note: newMarkdown },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
     static func stateMutation(_ state: StateMutation, isProject: Bool, privacyScope: PrivacyScope = .unrestricted) throws -> String {
         let identifier = try jsonLiteral(state.identifier)
         let sets = try jsonLiteral(state.sets.map { ["key": $0.key, "value": $0.value] })
@@ -1919,9 +1973,9 @@ function reviewIntervalUnitName(unit) {
   }
 }
 
-function serializeProject(project) {
+function serializeProject(project, includeNotes) {
   const ri = project.reviewInterval;
-  return {
+  const result = {
     id: project.id.primaryKey,
     name: project.name,
     folder: projectFolderNamesForProject(project),
@@ -1933,6 +1987,12 @@ function serializeProject(project) {
     nextReviewDate: iso(project.nextReviewDate),
     lastReviewDate: iso(project.lastReviewDate)
   };
+  if (includeNotes) {
+    // noteTextToMarkdown is provided by markdownNoteSupport; only referenced when
+    // the caller opts in (and includes that support block).
+    result.note = noteTextToMarkdown(project.noteText);
+  }
+  return result;
 }
 """#
 
@@ -2191,6 +2251,29 @@ function composeStateNote(freeform, state, order) {
   const block = STATE_MARKER + "\n" + blockLines.join("\n");
   if (trimmedFreeform.length === 0) { return block; }
   return trimmedFreeform + "\n\n" + block;
+}
+"""#
+
+// Edits a project's freeform note (set / prepend / clear) while preserving the
+// trailing "=== ofctl-state ===" block verbatim. Depends on parseStateBlock and
+// composeStateNote from stateBlockSupport, and noteTextToMarkdown from
+// markdownNoteSupport.
+private let projectNoteSupport = #"""
+function applyProjectNoteEdit(project, mode, text) {
+  const parsed = parseStateBlock(noteTextToMarkdown(project.noteText));
+  let newFreeform;
+  if (mode === "clear") {
+    newFreeform = "";
+  } else if (mode === "prepend") {
+    const existing = (parsed.freeform || "").replace(/^\s+/, "");
+    newFreeform = existing.length ? (text + "\n\n" + existing) : text;
+  } else {
+    newFreeform = text;
+  }
+  if (parsed.hasBlock) {
+    return composeStateNote(newFreeform, parsed.state, parsed.order);
+  }
+  return (newFreeform || "").replace(/\s+$/, "");
 }
 """#
 

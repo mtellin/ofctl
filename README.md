@@ -192,6 +192,17 @@ ofctl project-rename "Home Maintenance" --to "House Maintenance" --dry-run
 ofctl project-rename "Home Maintenance" --to "House Maintenance"
 ```
 
+Read and edit project notes (the freeform note; any trailing `=== ofctl-state ===`
+block is always preserved):
+
+```sh
+ofctl projects --folder Home --include-notes --format text
+ofctl project-note "House Maintenance" --note "Reference: obsidian://open?vault=Home&file=House%20Maintenance"
+ofctl project-note "House Maintenance" --prepend "[Notes](obsidian://open?vault=Home&file=House%20Maintenance)"
+ofctl project-note "House Maintenance" --note none        # clear the freeform note
+ofctl project-note pjJ8kQ2xYz1 --note-file ./note.md      # target by project id, load from file
+```
+
 Dry-run any write first:
 
 ```sh
@@ -273,6 +284,9 @@ ofctl project-delete "Home Maintenance"
   level with `--to-folder none`).
 - `ofctl project-rename`: rename a project using OmniFocus's native project
   name property.
+- `ofctl project-note`: set, prepend to, or clear a project's freeform note
+  (`--note TEXT` / `--note-file PATH` / `--prepend TEXT` / `--note none`). Targets
+  a project by name or id. Preserves any trailing `=== ofctl-state ===` block.
 - `ofctl project-completion`: set or unset a parallel/sequential project's
   "Complete with last action" flag.
 - `ofctl project-create`: create a new project, optionally in a folder and
@@ -289,7 +303,7 @@ ofctl project-delete "Home Maintenance"
 - `ofctl project-delete`: delete a project by name.
 - `ofctl projects`: list projects with optional folder, status, and
   `--due-for-review` filters. Includes review interval and next/last review
-  date in JSON output.
+  date in JSON output. Add `--include-notes` to include each project's note.
 - `ofctl project-review`: set a project's review interval and/or mark it as
   reviewed. Interval spec: `<N><d|w|m|y>` (e.g. `1w`, `2m`); `none` clears.
 

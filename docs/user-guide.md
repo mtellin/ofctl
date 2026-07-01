@@ -852,15 +852,54 @@ ofctl project-rename "Home Maintenance" --to "House Maintenance"
 This uses OmniFocus's native project `name` property. It does not recreate the
 project or move its tasks.
 
+## Project Notes (project-note)
+
+Set, prepend to, or clear a project's **freeform note**. The project can be given
+by **name or by primary-key id** (e.g. the id from an `omnifocus:///project/<id>`
+link).
+
+```sh
+ofctl project-note PROJECT_NAME_OR_ID (--note TEXT | --note-file PATH | --prepend TEXT | --note none) [--dry-run]
+```
+
+Exactly one operation per call:
+
+- `--note TEXT` — replace the freeform note with `TEXT`.
+- `--note-file PATH` — replace the freeform note with the contents of a file.
+- `--prepend TEXT` — insert `TEXT` above the existing freeform note (blank-line
+  separated). Ideal for adding a reference link to the top of the note.
+- `--note none` — clear the freeform note.
+
+```sh
+# Add an Obsidian deep link to the top of the note
+ofctl project-note "House Maintenance" --prepend "[Notes](obsidian://open?vault=Home&file=House%20Maintenance)"
+
+# Replace the whole freeform note
+ofctl project-note "House Maintenance" --note "Contractor: Acme; quote pending"
+
+# Target by id, preview with --dry-run
+ofctl project-note pjJ8kQ2xYz1 --note-file ./note.md --dry-run
+
+# Clear it
+ofctl project-note "House Maintenance" --note none
+```
+
+**State block is always preserved.** If the note contains a trailing
+`=== ofctl-state ===` block (see [Note State Block](#note-state-block-task-state--project-state)),
+`project-note` only edits the freeform region **above** it — the block is never
+clobbered. This is unlike task `--note`, which replaces the entire note. Use
+`project-state` to edit the block itself.
+
 ## projects
 
 Lists projects with optional filtering. Each project in the JSON result includes
 `id`, `name`, `folder` (array), `status`, `singleton`, `sequential`,
 `completedByChildren`, `reviewInterval` (`{steps, unit}` or null),
-`nextReviewDate`, and `lastReviewDate`.
+`nextReviewDate`, and `lastReviewDate`. With `--include-notes`, each project also
+includes a `note` field (its freeform note plus any state block, as Markdown).
 
 ```sh
-ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--format json|text]
+ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--include-notes] [--format json|text]
 ```
 
 List all projects:
@@ -885,6 +924,12 @@ Projects due for review (nextReviewDate ≤ now):
 
 ```sh
 ofctl projects --due-for-review --format text
+```
+
+Include each project's note (text output prints the note's first line):
+
+```sh
+ofctl projects --folder Home --include-notes --format text
 ```
 
 ## project-review
