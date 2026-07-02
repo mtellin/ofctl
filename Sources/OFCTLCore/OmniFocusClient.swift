@@ -2136,7 +2136,16 @@ function noteTextToMarkdown(noteObj) {
       text = wrapMarkdownRun(raw, "**", "**");
     }
     if (link && link.string && link.string.length > 0) {
-      text = raw === link.string ? escapeMarkdownText(raw) : markdownLinkRun(raw, link.string);
+      // Emit a bare URL when the visible text is itself a URL. OmniFocus
+      // auto-links bare URLs but stores a normalized link target that differs
+      // from the visible text (raw !== link.string), which would otherwise
+      // re-wrap the URL as [url](url) on every read. On the next write,
+      // markdownRuns() flattens [text](url) back to "text (url)", leaving a
+      // duplicate copy that OmniFocus re-auto-links — so each state-block
+      // round trip accumulated another copy. Bare-emitting URL-valued text
+      // keeps the round trip idempotent.
+      const rawIsUrl = /^\w[\w+.-]*:\/\//.test(raw.trim());
+      text = (raw === link.string || rawIsUrl) ? escapeMarkdownText(raw) : markdownLinkRun(raw, link.string);
     }
 
     return text;
