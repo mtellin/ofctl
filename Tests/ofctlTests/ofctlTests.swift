@@ -1689,3 +1689,103 @@ private func defaultUpdateTask() -> UpdateTask {
         try CLI.parse(["ofctl", "task-state", "abc123", "--set", "noequalsign"])
     }
 }
+
+// The note read/write cycle (noteTextToMarkdown -> markdownRuns) is pure OmniJS
+// embedded as a Swift string, so it cannot be exercised by Swift unit tests
+// directly. This test extracts the markdownNoteSupport block from source and
+// runs the escape (read) / markdownRuns (write) round trip under Node, asserting
+// it is idempotent. It guards against the backslash-accumulation regression:
+// escapeMarkdownText escapes _ * [ ] ` \ on read, so markdownRuns must unescape
+// them on write or every note round trip (e.g. each task-state --set) doubles
+// the backslashes. Skipped only when Node is unavailable (CI has it).
+@Test func markdownNoteRoundTripIsIdempotentUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let repoRoot = thisFile
+        .deletingLastPathComponent()   // ofctlTests/
+        .deletingLastPathComponent()   // Tests/
+        .deletingLastPathComponent()   // repo root
+    let source = repoRoot.appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+
+    let text = try String(contentsOf: source, encoding: .utf8)
+    let lines = text.components(separatedBy: "\n")
+    guard let open = lines.firstIndex(where: { $0.contains("private let markdownNoteSupport = #\"\"\"") }) else {
+        Issue.record("could not locate markdownNoteSupport block in \(source.path)")
+        return
+    }
+    var close = -1
+    for i in (open + 1)..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "\"\"\"#" {
+        close = i
+        break
+    }
+    #expect(close > open)
+    let js = lines[(open + 1)..<close].joined(separator: "\n")
+
+    let harness = #"""
+
+const rt = x => markdownRuns(escapeMarkdownText(x)).plain;
+
+// Literal note text: every markdown-special character (_ * ` [ ] \) must survive
+// the read (escape) + write (markdownRuns) cycle unchanged. Covers URLs and
+// Salesforce field names with underscores, plus literal delimiters that must not
+// be re-parsed as markup.
+const identity = [
+  "Salesforce POC__c and Sales_Engineer_Name__c",
+  "https://example.com/a_b/c-d?x=1&y=2",
+  "literal *stars* and double **asterisks** stay literal",
+  "inline `ticks` and a glob shell/*.swift",
+  "a [ref](https://x.com/p_q) written as plain text",
+  "See [ref] and item [2] here",
+  "C:\\path\\to\\file",
+  "mix _under_ *star* [br] `code` back\\slash",
+  "plain note, nothing special"
+];
+
+// An already-damaged note must not grow further (idempotent) even though the fix
+// does not retroactively heal it.
+const stableOnly = ["POC\\_\\_c"];
+
+const fails = [];
+for (const s of identity) {
+  const o = rt(s);
+  if (o !== s) fails.push("identity " + JSON.stringify(s) + " -> " + JSON.stringify(o));
+}
+for (const s of identity.concat(stableOnly)) {
+  const a = rt(s), b = rt(a);
+  if (a !== b) fails.push("idempotency " + JSON.stringify(s) + " a=" + JSON.stringify(a) + " b=" + JSON.stringify(b));
+}
+
+// The (?<!\\) delimiter guards must suppress only escaped delimiters, not genuine
+// markup emitted by noteTextToMarkdown for styled runs.
+if (!markdownRuns("**bold**").runs.some(r => r.style.bold)) fails.push("genuine **bold** no longer parses");
+if (!markdownRuns("*ital*").runs.some(r => r.style.italic)) fails.push("genuine *ital* no longer parses");
+if (!markdownRuns("`code`").runs.some(r => r.style.code)) fails.push("genuine `code` no longer parses");
+
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-roundtrip-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "note round trip not idempotent:\n\(stderr)")
+}

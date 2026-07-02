@@ -1000,6 +1000,14 @@ why: committed in sync; blocks the ADR
 > reading, so a heading sentinel would not survive the round trip. The `===`
 > sentinel contains no markdown-special characters and round-trips verbatim.
 
+> **Freeform notes round-trip losslessly.** Each `--set` / `--increment` /
+> `--clear-key` rewrites the whole note (freeform region plus state block), so
+> the freeform text must survive the read → write cycle unchanged. Markdown-special
+> characters — underscores, asterisks, square brackets, backticks, and backslashes,
+> common in URLs and Salesforce field names such as `Some_Field__c` — are escaped
+> on read and unescaped on write symmetrically, so they neither accumulate
+> backslashes nor drift no matter how many times the state block is updated.
+
 ```sh
 ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
 ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
