@@ -2036,6 +2036,16 @@ function escapeMarkdownText(value) {
     .replace(/\]/g, "\\]");
 }
 
+// Inverse of escapeMarkdownText: strip the escaping backslash from an escaped
+// markdown-special character. markdownRuns must apply this to every text
+// fragment it writes back so the read (escape) / write cycle is symmetric.
+// Without it, each note round trip (e.g. every task-state --set) re-escaped
+// already-escaped text and backslashes accumulated exponentially for any note
+// containing _ * [ ] ` or \ (e.g. Salesforce field names like Some_Field__c).
+function unescapeMarkdownText(value) {
+  return value.replace(/\\([\\*_`\[\]])/g, "$1");
+}
+
 function wrapMarkdownRun(raw, opener, closer) {
   const match = /^([\s\S]*?)(\s*)$/.exec(raw);
   const body = match ? match[1] : raw;
@@ -2078,30 +2088,40 @@ function normalizeOmniMarkdown(markdown) {
 function markdownRuns(markdown) {
   const runs = [];
   let plain = "";
-  const tokenPattern = /(\[([^\]\n]+)\]\((?:"([^"\n]+)"|'([^'\n]+)'|<([^>\n]+)>|([^)\n]+))\))|(\*\*([^*\n]+)\*\*)|(`([^`\n]+)`)|(?<!\*)\*([^*\n]+)\*(?!\*)/g;
+  // Opening delimiters are guarded with (?<!\\) so an *escaped* delimiter is not
+  // treated as a token. On read, escapeMarkdownText backslash-escapes literal
+  // * ** ` [ ] in note text; those escaped forms must fall through to
+  // unescapeMarkdownText below (restoring the literal character) rather than be
+  // re-parsed as bold/italic/code/link markup, which would strip the delimiters
+  // and mangle the note. Genuine markup (unescaped delimiters) still matches.
+  const tokenPattern = /(?<!\\)(\[([^\]\n]+)\]\((?:"([^"\n]+)"|'([^'\n]+)'|<([^>\n]+)>|([^)\n]+))\))|(?<!\\)(\*\*([^*\n]+)\*\*)|(?<!\\)(`([^`\n]+)`)|(?<![\\*])\*([^*\n]+)\*(?!\*)/g;
   let lastIndex = 0;
   let match;
 
   while ((match = tokenPattern.exec(markdown)) !== null) {
     if (match.index > lastIndex) {
-      plain += markdown.slice(lastIndex, match.index);
+      plain += unescapeMarkdownText(markdown.slice(lastIndex, match.index));
     }
 
     const start = plain.length;
     let text;
     let style = {};
 
+    // Unescape inline (per fragment) rather than once at the end: the run
+    // start/end offsets below index into plain, and setMarkdownNote applies
+    // styles at those offsets, so plain must already be in its final
+    // (unescaped) form as each run is recorded or the style ranges misalign.
     if (match[1]) {
       const url = markdownLinkDestination(match[3] || match[4] || match[5] || match[6] || "");
-      text = match[2] + " (" + url + ")";
+      text = unescapeMarkdownText(match[2]) + " (" + url + ")";
     } else if (match[7]) {
-      text = match[8];
+      text = unescapeMarkdownText(match[8]);
       style.bold = true;
     } else if (match[9]) {
-      text = match[10];
+      text = unescapeMarkdownText(match[10]);
       style.code = true;
     } else {
-      text = match[11];
+      text = unescapeMarkdownText(match[11]);
       style.italic = true;
     }
 
@@ -2110,7 +2130,7 @@ function markdownRuns(markdown) {
     lastIndex = tokenPattern.lastIndex;
   }
 
-  plain += markdown.slice(lastIndex);
+  plain += unescapeMarkdownText(markdown.slice(lastIndex));
 
   const headingPattern = /(^|\n)(#{1,3}) ([^\n]+)/g;
   while ((match = headingPattern.exec(plain)) !== null) {
