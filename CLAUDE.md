@@ -99,6 +99,19 @@ After any session that merges user-facing changes, suggest tagging a release.
 - `minor` (v0.x.0) — new commands, new flags, behavior changes (backwards-compatible)
 - `major` (v1.0.0+) — breaking changes to command syntax or output format
 
+**Pre-release review (before cutting the tag):**
+Spawn a **FRESH subagent with clean context** to review the release diff — do
+not review inline. Run `/security-review` then `/code-review high`. The author
+context is anchored on its own intent; a clean reviewer re-derives from the
+diff and catches skipped assumptions. Focus for ofctl specifically:
+- It reads and mutates the user's live OmniFocus database — check for
+  destructive/irreversible operations without a guard, and any command that
+  could corrupt or bulk-delete real data.
+- No hardcoded personal paths, tokens, or DB identifiers in committed source.
+- Error handling on the OmniFocus bridge: fail loudly, never silently succeed.
+
+Proceed only once the review is clean.
+
 **How to cut a release:**
 ```sh
 git tag v0.X.Y
