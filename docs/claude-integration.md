@@ -303,6 +303,13 @@ ofctl project-move "$PROJECT_NAME" --to-folder Work --dry-run
 
 ## Known Limitations
 
+Project arguments (`--project` and the `PROJECT_NAME` positional on `project-*`
+commands) resolve by exact name across all folders — including projects nested in
+subfolders — and fall back to a primary-key id. Resolution is never a substring
+match. When a dropped or completed project shares a name with an active one, the
+name resolves to the active twin; pass the twin's id to target it. Prefer id when
+scripting a mutation against a specific project you already looked up.
+
 Repeated `--tag` filters use AND semantics by default. Use `--tag-mode any`
 when a query should match any listed tag.
 

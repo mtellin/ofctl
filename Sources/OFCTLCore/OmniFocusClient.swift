@@ -528,8 +528,7 @@ enum OmniJavaScript {
               }
               return { project: null, created: false };
             }
-            const project = flattenedProjects.byName(name);
-            return { project, created: false };
+            return { project: resolveProjectByNameOrId(name), created: false };
           }
 
           function projectNamedOrCreated(name) {
@@ -742,19 +741,22 @@ enum OmniJavaScript {
 
           function existingProjectNamed(name) {
             if (!name) { return { project: null, created: false }; }
-            if (effectiveFolder !== null) {
-              const folder = folderForPath(effectiveFolder);
+            // Only constrain resolution to a folder when the caller EXPLICITLY
+            // passed --folder. effectiveFolder (the privacy-scope default) is a
+            // creation destination only — using it to filter resolution would
+            // exclude every project living in a subfolder of the allowed folder.
+            if (input.folder !== null) {
+              const folder = folderForPath(input.folder);
               const folderProjectMatches = flattenedProjects.filter(project => (
                 project.name === name && projectFolderNamesForProject(project).join("/") === folderPath(folder).join("/")
               ));
               if (folderProjectMatches.length === 1) { return { project: folderProjectMatches[0], created: false }; }
               if (folderProjectMatches.length > 1) {
-                throw new Error(`Ambiguous project in folder: ${effectiveFolder}/${name}`);
+                throw new Error(`Ambiguous project in folder: ${input.folder}/${name}`);
               }
               return { project: null, created: false };
             }
-            const project = flattenedProjects.byName(name);
-            return { project, created: false };
+            return { project: resolveProjectByNameOrId(name), created: false };
           }
 
           function projectNamedOrCreated(name) {
@@ -1009,7 +1011,7 @@ enum OmniJavaScript {
             break;
           }
           case "project": {
-            const project = flattenedProjects.byName(input.destination.target);
+            const project = resolveProjectByNameOrId(input.destination.target);
             if (!project) { throw new Error(`Project not found: ${input.destination.target}`); }
             assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.destination.target}`);
             destinationLocation = input.destination.position === "beginning" ? project.beginning : project.ending;
@@ -1072,7 +1074,7 @@ enum OmniJavaScript {
           };
 
           function projectNamed(name) {
-            const project = flattenedProjects.byName(name);
+            const project = resolveProjectByNameOrId(name);
             if (!project) {
               throw new Error(`Project not found: ${name}`);
             }
@@ -1134,7 +1136,7 @@ enum OmniJavaScript {
           };
 
           function projectNamed(name) {
-            const project = flattenedProjects.byName(name);
+            const project = resolveProjectByNameOrId(name);
             if (!project) {
               throw new Error(`Project not found: ${name}`);
             }
@@ -1190,7 +1192,7 @@ enum OmniJavaScript {
           };
 
           function projectNamed(name) {
-            const project = flattenedProjects.byName(name);
+            const project = resolveProjectByNameOrId(name);
             if (!project) {
               throw new Error(`Project not found: ${name}`);
             }
@@ -1244,7 +1246,7 @@ enum OmniJavaScript {
           };
 
           function projectNamed(name) {
-            const project = flattenedProjects.byName(name);
+            const project = resolveProjectByNameOrId(name);
             if (!project) {
               throw new Error(`Project not found: ${name}`);
             }
@@ -1475,7 +1477,7 @@ enum OmniJavaScript {
             return new Project.ReviewInterval(steps, unitMap[match[2]]);
           }
 
-          const project = flattenedProjects.byName(input.project);
+          const project = resolveProjectByNameOrId(input.project);
           if (!project) { throw new Error(`Project not found: ${input.project}`); }
           assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
 
@@ -1552,7 +1554,7 @@ enum OmniJavaScript {
             dryRun: \(delete.dryRun ? "true" : "false")
           };
 
-          const project = flattenedProjects.byName(input.project);
+          const project = resolveProjectByNameOrId(input.project);
           if (!project) { throw new Error(`Project not found: ${input.project}`); }
           assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
 
@@ -1791,10 +1793,7 @@ enum OmniJavaScript {
             dryRun: \(update.dryRun ? "true" : "false")
           };
 
-          let project = flattenedProjects.byName(input.identifier);
-          if (!project) {
-            project = flattenedProjects.find(p => p.id.primaryKey === input.identifier) || null;
-          }
+          const project = resolveProjectByNameOrId(input.identifier);
           if (!project) { throw new Error(`Project not found: ${input.identifier}`); }
           assertProjectAvailableInPrivacyScope(project, `Project not found or not available in current privacy scope: ${input.identifier}`);
 
@@ -1845,7 +1844,7 @@ enum OmniJavaScript {
 
           let target;
           if (input.isProject) {
-            target = flattenedProjects.byName(input.identifier);
+            target = resolveProjectByNameOrId(input.identifier);
             if (!target) { throw new Error(`Project not found: ${input.identifier}`); }
             assertProjectAvailableInPrivacyScope(target, `Project not found or not available in current privacy scope: ${input.identifier}`);
           } else {
@@ -2472,6 +2471,17 @@ const projectFolderNamesById = (() => {
 function projectFolderNamesForProject(project) {
   if (!project) { return []; }
   return projectFolderNamesById.get(project.id.primaryKey) || [];
+}
+
+// Resolve a project by exact name first, then fall back to its primary-key id.
+// Name match wins when both a name and a same-string id could match; passing an
+// id targets a specific project unambiguously (e.g. a dropped twin that shares a
+// name with an active project). Never does fuzzy/substring matching.
+function resolveProjectByNameOrId(name) {
+  if (name === null || name === undefined) { return null; }
+  const byName = flattenedProjects.byName(name);
+  if (byName) { return byName; }
+  return flattenedProjects.find(project => project.id.primaryKey === name) || null;
 }
 
 function projectFolderNamesForTask(task) {

@@ -1789,3 +1789,56 @@ console.log("ok");
     let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     #expect(proc.terminationStatus == 0, "note round trip not idempotent:\n\(stderr)")
 }
+
+// Regression: `update --project NAME` must resolve projects living in subfolders
+// even under a privacy scope (which auto-fills a default top-level folder). The
+// bug gated resolution on `effectiveFolder`, excluding every subfolder project.
+// Resolution must go through the shared name-or-id resolver and must NOT filter
+// by the privacy-default folder unless the caller explicitly passed --folder.
+@Test func updateResolvesProjectAcrossSubfoldersAndById() throws {
+    let update = UpdateTask(
+        ids: ["abc123"],
+        name: nil,
+        project: "Some Project",
+        addTags: [],
+        removeTags: [],
+        clearTags: false,
+        deferDate: nil,
+        plannedDate: nil,
+        dueDate: nil,
+        repeatRule: nil,
+        repeatMethod: nil,
+        estimatedMinutes: nil,
+        note: nil,
+        sequential: nil,
+        completedByChildren: nil,
+        complete: false,
+        completedAt: nil,
+        incomplete: false,
+        drop: false,
+        dropAllOccurrences: false,
+        skip: false,
+        flagged: nil,
+        createProjectIfMissing: false,
+        folder: nil,
+        dryRun: true
+    )
+    let script = try OmniJavaScript.updateTask(update, privacyScope: .work)
+    #expect(script.contains("function resolveProjectByNameOrId"))
+    // existingProjectNamed's no-folder branch must resolve globally via the
+    // resolver (was `flattenedProjects.byName(name)` gated on effectiveFolder).
+    #expect(script.contains("return { project: resolveProjectByNameOrId(name), created: false };"))
+    // The folder filter inside existingProjectNamed must key off the explicit
+    // --folder input, not the privacy-default effectiveFolder.
+    #expect(script.contains("if (input.folder !== null) {"))
+}
+
+// Regression: project-scoped mutations must accept a primary-key id so a caller
+// can target a specific project unambiguously (e.g. a dropped twin sharing a
+// name with an active project, which byName alone always resolves to the active).
+@Test func projectStatusResolvesByNameOrId() throws {
+    let status = UpdateProjectStatus(project: "abc123id", status: .dropped, dryRun: true)
+    let script = try OmniJavaScript.updateProjectStatus(status, privacyScope: .work)
+    #expect(script.contains("function resolveProjectByNameOrId"))
+    #expect(script.contains("resolveProjectByNameOrId(name)"))
+}

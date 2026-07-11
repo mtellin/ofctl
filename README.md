@@ -301,10 +301,15 @@ ofctl project-delete "Home Maintenance"
 - `ofctl tag-move`: reparent a tag under a different tag or move it to the top
   level with `--to-parent none`.
 - `ofctl task-delete`: delete one or more tasks by ID (accepts multiple IDs).
-- `ofctl project-delete`: delete a project by name.
+- `ofctl project-delete`: delete a project by name or id.
 - `ofctl projects`: list projects with optional folder, status, and
   `--due-for-review` filters. Includes review interval and next/last review
   date in JSON output. Add `--include-notes` to include each project's note.
+
+Every `project-*` command and the `--project` option resolve their target by
+exact name across all folders, then by primary-key id. A name resolves to the
+active project when a dropped/completed twin shares it — pass an id to target a
+specific twin unambiguously.
 - `ofctl project-review`: set a project's review interval and/or mark it as
   reviewed. Interval spec: `<N><d|w|m|y>` (e.g. `1w`, `2m`); `none` clears.
 
