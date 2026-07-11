@@ -585,6 +585,15 @@ ofctl update TASK_ID --project "Work Follow-ups" --no-create-project
 Use this guardrail when processing inbox tasks or when the project name may be a
 partial match.
 
+`--project` matches by exact name across every folder (including projects nested
+in subfolders), then falls back to a project's primary-key id. Pass an id to
+target one project unambiguously — for example a dropped project that shares a
+name with an active one, since a name always resolves to the active twin:
+
+```sh
+ofctl update TASK_ID --project "hrqEheYhIFz" --no-create-project   # by id
+```
+
 Move back to the inbox:
 
 ```sh
@@ -791,6 +800,15 @@ Use `--dry-run` to preview the project status mutation:
 
 ```sh
 ofctl project-status "Product Launch" --status on-hold --dry-run
+```
+
+Every `project-*` command takes the project as a name or a primary-key id. A name
+resolves to the active project when a dropped/completed twin shares that name, so
+target the twin by id:
+
+```sh
+ofctl project-status "hrqEheYhIFz" --status dropped   # id targets a specific twin
+ofctl project-delete "hrqEheYhIFz"
 ```
 
 ## Project Completion

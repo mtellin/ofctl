@@ -404,6 +404,7 @@ public enum CLI {
       DATE can be now, today, tomorrow, yesterday, YYYY-MM-DD, or an ISO-like date/time.
       Task --project values create a top-level project when no project with that name exists; use update --no-create-project to require an existing project.
       Add --folder FOLDER_PATH to create or target a project inside a folder when adding or updating tasks. Within a privacy scope that allows exactly one folder, update creates new projects in that folder automatically.
+      Project arguments (--project and the PROJECT_NAME positional on project-* commands) match by exact name across all folders, then fall back to a primary-key id. Pass an id to target one project unambiguously — e.g. a dropped project that shares a name with an active one (name always resolves to the active twin).
       Task --tag values can be leaf names or paths like People/Alex Rivera and Status/Work 💼.
       Repeat rules are ICS RRULE strings such as FREQ=WEEKLY;INTERVAL=1.
     """
