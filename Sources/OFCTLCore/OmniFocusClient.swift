@@ -2535,6 +2535,7 @@ function serializeTask(task, includeNotes, includeChildren) {
     plannedDate: iso(task.plannedDate),
     dueDate: iso(task.dueDate),
     completionDate: iso(task.completionDate),
+    creationDate: iso(task.added),
     effectiveCompletionDate: iso(task.effectiveCompletedDate),
     effectiveDropDate: iso(task.effectiveDropDate),
     effectiveDeferDate: iso(task.effectiveDeferDate),
