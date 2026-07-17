@@ -146,7 +146,13 @@ window may visibly change while the command runs.
 ## Availability And Date Filters
 
 Use `--available` when you want tasks that are available by effective defer
-date. Tasks with no defer date count as available.
+date. Tasks with no defer date count as available. Tasks whose containing
+project is on hold, done, or dropped are never available. For point-in-time
+queries (`--available now`), tasks OmniFocus reports as blocked (a sequential
+predecessor incomplete, or an on-hold ancestor) are also excluded — matching
+what the OmniFocus UI shows as available right now. Date-window variants
+(`--available today`, `before:`/`after:`) apply only the defer-date and
+project-status checks, since blocking can change within the window.
 
 ```sh
 ofctl tasks --available now

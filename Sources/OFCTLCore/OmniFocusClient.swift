@@ -343,6 +343,12 @@ enum OmniJavaScript {
             if (availableFilter !== null) {
               // --available implies filtering to active tasks; completed/dropped are never available
               if (taskEffectivelyCompleted(task) || taskEffectivelyDropped(task)) { return false; }
+              // a task under an on-hold/done/dropped project is never available, at any date
+              const container = task.containingProject;
+              if (container !== null && container.status !== Project.Status.Active) { return false; }
+              // point-in-time query: honor OmniFocus blocking too (sequential predecessors,
+              // on-hold ancestors) — matches what the OF UI shows as available right now
+              if (availableFilter === "now" && task.taskStatus === Task.Status.Blocked) { return false; }
             } else {
               // no --available flag: raw mode — respect explicit --include-completed / --include-dropped flags only
               if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task)) { return false; }

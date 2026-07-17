@@ -1387,6 +1387,15 @@ import Testing
     #expect(script.contains("effectiveDropDate: iso(task.effectiveDropDate)"))
 }
 
+@Test func taskQueryAvailableRespectsContainerStatusAndBlocking() throws {
+    let script = try OmniJavaScript.tasksQuery(defaultTaskQuery())
+
+    // --available must never surface tasks under an on-hold/done/dropped project…
+    #expect(script.contains("container.status !== Project.Status.Active"))
+    // …and point-in-time queries also honor OmniFocus task blocking
+    #expect(script.contains("availableFilter === \"now\" && task.taskStatus === Task.Status.Blocked"))
+}
+
 @Test func workPrivacyScopeGuardsDirectTaskLookup() throws {
     let script = try OmniJavaScript.taskLookup(
         TaskLookup(id: "abc123", includeNotes: true, includeChildren: true, format: .json),
