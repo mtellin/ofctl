@@ -1427,7 +1427,13 @@ enum OmniJavaScript {
             if (!projectAllowedByPrivacyScope(project)) { return false; }
             if (folderFilter && !projectFolderNamesForProject(project).includes(folderFilter)) { return false; }
             if (statusFilter && projectStatusName(project.status) !== statusFilter) { return false; }
-            if (dueForReview && !(project.nextReviewDate && project.nextReviewDate <= now)) { return false; }
+            if (dueForReview) {
+              // Mirror OmniFocus's native Review perspective: only active/on-hold
+              // projects appear for review — completed/dropped never do.
+              const reviewStatus = projectStatusName(project.status);
+              if (reviewStatus === "completed" || reviewStatus === "dropped") { return false; }
+              if (!(project.nextReviewDate && project.nextReviewDate <= now)) { return false; }
+            }
             return true;
           });
 
