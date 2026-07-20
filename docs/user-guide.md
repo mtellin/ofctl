@@ -347,7 +347,17 @@ ofctl add "Ask Taylor about launch date" --project "Work Follow-ups"
 
 If the named project does not exist, `ofctl` creates it as a top-level
 OmniFocus project before adding the task. `--dry-run` reports whether the
-project already exists or would be created.
+project already exists or would be created (via `meta.createdProject` in the
+JSON result — watch this to catch an accidental duplicate of a nested project).
+
+`add`, `add-group`, and `update` emit JSON by default. Pass `--format text`
+for a one-line summary, or `--format json` explicitly (the default). These
+commands accept the same `--format json|text` flag as the read commands, so
+scripts can pass it uniformly.
+
+```sh
+ofctl add "Ask Taylor about launch date" --format text
+```
 
 Add to a project inside a folder, including a nested folder:
 

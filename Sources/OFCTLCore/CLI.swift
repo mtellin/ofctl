@@ -92,6 +92,7 @@ public struct AddTask: Equatable {
     public var flagged: Bool?
     public var actionGroup: Bool
     public var dryRun: Bool
+    public var format: OutputFormat
 
     public init(
         name: String,
@@ -110,7 +111,8 @@ public struct AddTask: Equatable {
         completedByChildren: Bool? = nil,
         flagged: Bool? = nil,
         actionGroup: Bool = false,
-        dryRun: Bool = false
+        dryRun: Bool = false,
+        format: OutputFormat = .json
     ) {
         self.name = name
         self.project = project
@@ -129,6 +131,7 @@ public struct AddTask: Equatable {
         self.flagged = flagged
         self.actionGroup = actionGroup
         self.dryRun = dryRun
+        self.format = format
     }
 }
 
@@ -158,6 +161,7 @@ public struct UpdateTask: Equatable {
     public var createProjectIfMissing: Bool = true
     public var folder: String? = nil
     public var dryRun: Bool
+    public var format: OutputFormat = .json
 }
 
 public struct RenameTask: Equatable {
@@ -369,9 +373,9 @@ public enum CLI {
       ofctl perspectives [--format json|text]
       ofctl task TASK_ID [--include-notes] [--include-children] [--format json|text]
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
-      ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run]
-      ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run]
-      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run]
+      ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run] [--format json|text]
+      ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run] [--format json|text]
+      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
       ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
@@ -679,6 +683,12 @@ public enum CLI {
                 task.flagged = false
             case "--dry-run":
                 task.dryRun = true
+            case "--format":
+                let value = try parser.value(after: arg)
+                guard let format = OutputFormat(rawValue: value) else {
+                    throw CLIError.usage("Unsupported format: \(value)")
+                }
+                task.format = format
             default:
                 throw CLIError.usage("Unexpected argument for add: \(arg)")
             }
@@ -802,6 +812,12 @@ public enum CLI {
                 task.flagged = false
             case "--dry-run":
                 task.dryRun = true
+            case "--format":
+                let value = try parser.value(after: arg)
+                guard let format = OutputFormat(rawValue: value) else {
+                    throw CLIError.usage("Unsupported format: \(value)")
+                }
+                task.format = format
             default:
                 throw CLIError.usage("Unexpected argument for update: \(arg)")
             }

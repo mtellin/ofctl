@@ -21,11 +21,11 @@ struct OFCTL {
                 let output = try client.tasks(matching: query)
                 printTasks(output, format: query.format)
             case .add(let task):
-                print(try client.add(task))
+                printMutation(try client.add(task), format: task.format)
             case .addGroup(let task):
-                print(try client.add(task))
+                printMutation(try client.add(task), format: task.format)
             case .update(let task):
-                print(try client.update(task))
+                printMutation(try client.update(task), format: task.format)
             case .taskRename(let rename):
                 print(try client.renameTask(rename))
             case .taskMove(let move):
@@ -72,6 +72,29 @@ struct OFCTL {
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
             Foundation.exit(1)
+        }
+    }
+
+    /// Print the result of a mutating command (add / add-group / update).
+    /// These commands emit JSON by default; `--format text` renders a one-line
+    /// summary per affected task, falling back to raw JSON if the shape is
+    /// unexpected. `--format json` (the default) prints the JSON unchanged, so
+    /// callers can always parse `meta.createdProject` etc.
+    private static func printMutation(_ json: String, format: OutputFormat) {
+        guard format == .text,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            print(json)
+            return
+        }
+
+        if let tasks = object["tasks"] as? [[String: Any]] {
+            tasks.forEach { print(formatTaskLine($0)) }
+        } else if let task = object["task"] as? [String: Any] {
+            print(formatTaskLine(task))
+        } else {
+            print(json)
         }
     }
 

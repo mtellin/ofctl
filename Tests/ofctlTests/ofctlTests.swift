@@ -435,6 +435,42 @@ import Testing
     ))))
 }
 
+@Test func parsesAddTaskFormat() throws {
+    let text = try CLI.parse(["ofctl", "add", "Ship the deck", "--format", "text"])
+    guard case let .add(task) = text.command else {
+        Issue.record("expected add command")
+        return
+    }
+    #expect(task.format == .text)
+
+    let byDefault = try CLI.parse(["ofctl", "add", "Ship the deck"])
+    guard case let .add(defaulted) = byDefault.command else {
+        Issue.record("expected add command")
+        return
+    }
+    #expect(defaulted.format == .json)
+
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "add", "Ship the deck", "--format", "yaml"])
+    }
+}
+
+@Test func parsesUpdateTaskFormat() throws {
+    let text = try CLI.parse(["ofctl", "update", "abc123", "--format", "text"])
+    guard case let .update(task) = text.command else {
+        Issue.record("expected update command")
+        return
+    }
+    #expect(task.format == .text)
+
+    let byDefault = try CLI.parse(["ofctl", "update", "abc123", "--complete"])
+    guard case let .update(defaulted) = byDefault.command else {
+        Issue.record("expected update command")
+        return
+    }
+    #expect(defaulted.format == .json)
+}
+
 @Test func buildsFourCharacterAppleEventCodes() {
     #expect(fourCharCode("OFOC") == 0x4f464f43)
     #expect(fourCharCode("OFEJ") == 0x4f46454a)
