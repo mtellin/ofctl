@@ -97,6 +97,14 @@ projects under an OmniFocus folder named `Work`. Task queries silently omit
 other items, and direct task lookup, task writes, and project status changes
 outside that scope fail.
 
+Under a privacy scope, task queries enumerate only the Inbox and the in-scope
+folders' projects — personal folders are never traversed at all, so the scope is
+a hard query boundary rather than an after-the-fact filter. This also keeps
+queries fast on large databases: OmniFocus's global task enumeration walks the
+entire database, so scoping the walk to the work folders is proportionally
+cheaper. `hostName` matching is case-insensitive and matches either the full or
+the short (pre-`.`) hostname form.
+
 If OmniFocus is installed in a non-standard location or LaunchServices cannot
 resolve it reliably, configure the app target explicitly:
 
