@@ -335,7 +335,33 @@ enum OmniJavaScript {
             return rule !== null && rule.ruleString === filter;
           }
 
-          const sourceTasks = perspectiveName ? tasksInPerspective(perspectiveName) : flattenedTasks;
+          // Enumerate the smallest set of tasks that could contain a privacy-allowed
+          // match. When a privacy scope is active (e.g. the work scope on a work
+          // machine), this walks only the inbox (if allowed) and the projects whose
+          // folder is in scope — it NEVER traverses personal folders. That makes the
+          // privacy scope a real query boundary rather than a post-filter, and is
+          // also the dominant speedup: OmniFocus's global `flattenedTasks` getter
+          // walks the ENTIRE database (personal included) and is by far the slowest
+          // step. The predicate below still applies every filter — including the
+          // privacy check — so results are identical to filtering flattenedTasks:
+          // the only tasks skipped here are ones that could never pass the scope
+          // (personal-folder tasks), plus project root tasks and project-less
+          // orphans, both of which the predicate already excludes.
+          function privacyScopedSourceTasks() {
+            const out = [];
+            if (privacyAllowInbox) {
+              inbox.forEach(task => out.push(task));
+            }
+            flattenedProjects.forEach(project => {
+              if (!projectAllowedByPrivacyScope(project)) { return; }
+              project.flattenedTasks.forEach(task => out.push(task));
+            });
+            return out;
+          }
+
+          const sourceTasks = perspectiveName
+            ? tasksInPerspective(perspectiveName)
+            : (privacyScope ? privacyScopedSourceTasks() : flattenedTasks);
           const matchedTasks = sourceTasks.filter(task => {
             if (projectIds.has(task.id.primaryKey)) { return false; }
             if (!task.inInbox && task.parent === null && task.containingProject !== null) { return false; }
