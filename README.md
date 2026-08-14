@@ -311,7 +311,8 @@ exact name across all folders, then by primary-key id. A name resolves to the
 active project when a dropped/completed twin shares it — pass an id to target a
 specific twin unambiguously.
 - `ofctl project-review`: set a project's review interval and/or mark it as
-  reviewed. Interval spec: `<N><d|w|m|y>` (e.g. `1w`, `2m`); `none` clears.
+  reviewed. Interval spec: `<N><d|w|m|y>` (e.g. `1w`, `2m`). An interval cannot be
+  cleared — OmniFocus requires one on every project; use a long one like `1y`.
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created

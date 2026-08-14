@@ -979,7 +979,7 @@ ofctl projects --folder Home --include-notes --format text
 Sets a project's review interval and/or marks it as reviewed.
 
 ```sh
-ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
+ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC] [--dry-run]
 ```
 
 Interval spec format: `<N><unit>` where unit is `d` (days), `w` (weeks),
@@ -1004,15 +1004,22 @@ ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w --dry-run
 ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w
 ```
 
-Clear the review interval:
+**A review interval cannot be cleared.** OmniFocus requires every project to have
+one, so `--interval none` is rejected with an explanatory error. To make a project
+effectively review-free, set a long interval instead:
 
 ```sh
-ofctl project-review "Home Maintenance" --interval none
+ofctl project-review "Home Maintenance" --interval 1y
 ```
 
-> **API note:** `--mark-reviewed` calls `project.markReviewed()` in OmniJS,
-> which advances `nextReviewDate` by the review interval. If the project has no
-> review interval set, setting one first is recommended.
+> **API notes.** OmniJS has no `project.markReviewed()` method — `--mark-reviewed`
+> sets `lastReviewDate` to now, which is what OmniFocus derives the review state
+> from. `nextReviewDate` is computed as `lastReviewDate + reviewInterval` and is
+> only recalculated when `lastReviewDate` is assigned; changing the interval alone
+> would leave a stale next-review date, so `--interval` re-assigns the existing
+> `lastReviewDate` to force the recompute without inventing a review that did not
+> happen. Review intervals also cannot be constructed in OmniJS — ofctl mutates a
+> copy of an existing interval instance and assigns it back.
 
 ## Note State Block (task-state / project-state)
 

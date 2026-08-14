@@ -1283,7 +1283,7 @@ import Testing
     )
     #expect(projectsScript.contains("projectAllowedByPrivacyScope(project)"))
     #expect(projectsScript.contains("privacyScope"))
-    #expect(!projectsScript.contains("Project.ReviewInterval.Unit"))
+    #expect(!projectsScript.contains("ReviewInterval.Unit"))
 
     let reviewScript = try OmniJavaScript.updateProjectReview(
         UpdateProjectReview(project: "Work Notifications", markReviewed: true, interval: nil, dryRun: false),
@@ -1292,7 +1292,49 @@ import Testing
     #expect(reviewScript.contains("assertProjectAvailableInPrivacyScope(project"))
     #expect(reviewScript.contains("project.lastReviewDate = new Date()"))
     #expect(reviewScript.contains("w: \"weeks\""))
-    #expect(!reviewScript.contains("Project.ReviewInterval.Unit"))
+    #expect(!reviewScript.contains("ReviewInterval.Unit"))
+}
+
+/// OmniJS exposes no `ReviewInterval` class: the global is undefined and
+/// `Project.ReviewInterval` is a plain object, so `new Project.ReviewInterval(...)`
+/// throws "CallbackObject is not a constructor" and `--interval` never worked.
+/// The read path had the mirror bug — comparing against `ReviewInterval.Unit.*`
+/// threw into a catch that returned null, so every project reported `unit: null`.
+///
+/// The prior guards asserted only on `"Project.ReviewInterval.Unit"`, which matched
+/// neither real defect. Assert on the constructs that actually broke.
+@Test func reviewIntervalUsesPlainObjectNotConstructor() throws {
+    let reviewScript = try OmniJavaScript.updateProjectReview(
+        UpdateProjectReview(project: "Home Maintenance", markReviewed: false, interval: "2w", dryRun: false),
+        privacyScope: .unrestricted
+    )
+
+    // Write path: mutate an existing instance; never construct one.
+    #expect(!reviewScript.contains("new Project.ReviewInterval"))
+    #expect(!reviewScript.contains("new ReviewInterval"))
+    #expect(reviewScript.contains("interval.steps = Number(match[1])"))
+    #expect(reviewScript.contains("interval.unit = unitMap[match[2]]"))
+    // A project with no interval borrows a template rather than failing.
+    #expect(reviewScript.contains("flattenedProjects.find"))
+    // Changing the interval must force nextReviewDate to recompute.
+    #expect(reviewScript.contains("project.lastReviewDate = project.lastReviewDate"))
+
+    // Clearing is impossible in OmniFocus; the attempt must fail with our own message.
+    let clearScript = try OmniJavaScript.updateProjectReview(
+        UpdateProjectReview(project: "Home Maintenance", markReviewed: false, interval: .some(nil), dryRun: false),
+        privacyScope: .unrestricted
+    )
+    #expect(clearScript.contains("does not allow clearing a review interval"))
+
+    let projectsScript = try OmniJavaScript.projectsQuery(
+        ProjectsQuery(folder: nil, status: nil, dueForReview: true, limit: 100, format: .json),
+        privacyScope: .unrestricted
+    )
+
+    // Read path: the unit is already a String; no lookup against a nonexistent enum,
+    // and no catch that silently degrades a real unit to null.
+    #expect(!projectsScript.contains("ReviewInterval.Unit"))
+    #expect(projectsScript.contains("typeof unit === \"string\""))
 }
 
 @Test func updateTaskScriptCanRefuseMissingProjectCreation() throws {

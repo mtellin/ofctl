@@ -40,7 +40,7 @@ The command surface is intentionally narrow:
 - `task-delete TASK_ID [TASK_ID ...]` to delete tasks; always `--dry-run` first and confirm IDs with the user before deleting
 - `project-delete PROJECT_NAME` to delete a project; always `--dry-run` first
 - `projects` to list projects with review dates; `--due-for-review` is useful for surfacing overdue reviews. Add `--include-notes` to read each project's note (e.g. to find a project's linked reference note)
-- `project-review PROJECT_NAME --mark-reviewed` to advance the review date; use `--interval SPEC` (e.g. `1w`) to set a recurring interval
+- `project-review PROJECT_NAME --mark-reviewed` to advance the review date; use `--interval SPEC` (e.g. `1w`) to set a recurring interval. Vary intervals by how fast a project actually moves rather than leaving every project on one cadence — uniform intervals make the whole review queue come due on the same day. An interval cannot be cleared; use a long one such as `1y`.
 - `task-state TASK_ID` / `project-state PROJECT_NAME` to read (`--get`) or merge (`--set KEY=VALUE`, `--increment KEY`, `--clear-key KEY`, `--clear`) a delimited `=== ofctl-state ===` metadata block in the note without clobbering its freeform content
 
 This is easier to review and approve than general-purpose application

@@ -393,7 +393,7 @@ public enum CLI {
       ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
       ofctl project-delete PROJECT_NAME [--dry-run]
       ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--include-notes] [--format json|text]
-      ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC|none] [--dry-run]
+      ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC] [--dry-run]
       ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
       ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
 

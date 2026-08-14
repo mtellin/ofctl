@@ -1501,18 +1501,38 @@ enum OmniJavaScript {
             dryRun: \(review.dryRun ? "true" : "false")
           };
 
-          function parseIntervalSpec(spec) {
-            if (!spec) { return null; }
+          // OmniJS gives no way to *construct* a review interval. All four obvious routes
+          // were tried against a live database and all fail:
+          //   - the constructor form throws "CallbackObject is not a constructor"
+          //   - calling the type as a function throws "is not a function"
+          //   - an object built from its prototype is rejected by the setter
+          //   - a plain {steps, unit} object is rejected by the setter
+          // The only working path is to take an existing instance, mutate steps/unit, and
+          // assign it back. Reading `project.reviewInterval` returns a *copy*, so mutating
+          // one borrowed from another project cannot corrupt that project — also verified.
+          function makeReviewInterval(project, spec) {
             const match = /^(\\d+)([dwmy])$/.exec(spec);
             if (!match) { throw new Error(`Invalid interval spec "${spec}" — use format like 1w, 2m, 3d, 1y`); }
-            const steps = Number(match[1]);
             const unitMap = {
               d: "days",
               w: "weeks",
               m: "months",
               y: "years"
             };
-            return new Project.ReviewInterval(steps, unitMap[match[2]]);
+
+            let interval = project.reviewInterval;
+            if (!interval) {
+              // No interval on this project: borrow a template from any project that has one.
+              const donor = flattenedProjects.find(function(p) { return p.reviewInterval; });
+              if (!donor) {
+                throw new Error("Cannot set a review interval: no project in this database has one to use as a template. Set an interval on any project in OmniFocus first.");
+              }
+              interval = donor.reviewInterval;
+            }
+
+            interval.steps = Number(match[1]);
+            interval.unit = unitMap[match[2]];
+            return interval;
           }
 
           const project = resolveProjectByNameOrId(input.project);
@@ -1528,7 +1548,20 @@ enum OmniJavaScript {
           }
 
           if (input.interval !== undefined) {
-            project.reviewInterval = parseIntervalSpec(input.interval);
+            if (!input.interval) {
+              // OmniFocus rejects a null reviewInterval outright ("must be set to a
+              // non-null value"), so there is no way to clear one. Fail with an
+              // actionable message instead of surfacing the raw bridge error.
+              throw new Error("OmniFocus does not allow clearing a review interval — every project must have one. Set a long interval instead, e.g. --interval 1y.");
+            }
+            project.reviewInterval = makeReviewInterval(project, input.interval);
+            // Setting the interval alone does NOT recompute nextReviewDate; OmniFocus only
+            // derives it when lastReviewDate is assigned. Without this, `--interval` looks
+            // like a no-op until the project is next reviewed. Re-assigning the existing
+            // value forces the recompute while preserving real review history.
+            if (project.lastReviewDate) {
+              project.lastReviewDate = project.lastReviewDate;
+            }
           }
           if (input.markReviewed) {
             // OmniFocus has no project.markReviewed() method; setting lastReviewDate to now
@@ -1999,15 +2032,12 @@ function projectStatusName(status) {
 }
 
 function reviewIntervalUnitName(unit) {
-  try {
-    if (unit === ReviewInterval.Unit.days) { return "days"; }
-    if (unit === ReviewInterval.Unit.weeks) { return "weeks"; }
-    if (unit === ReviewInterval.Unit.months) { return "months"; }
-    if (unit === ReviewInterval.Unit.years) { return "years"; }
-    return null;
-  } catch(e) {
-    return null;
-  }
+  // `reviewInterval.unit` is already a String ("days" | "weeks" | "months" | "years").
+  // A previous version compared it against a nonexistent OmniJS unit enum; the
+  // ReferenceError was swallowed by a catch and every project reported
+  // `"unit": null`. Never re-introduce that silent fallback.
+  if (typeof unit === "string" && unit.length > 0) { return unit; }
+  return unit == null ? null : String(unit);
 }
 
 function serializeProject(project, includeNotes) {
