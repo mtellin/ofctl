@@ -1012,14 +1012,23 @@ effectively review-free, set a long interval instead:
 ofctl project-review "Home Maintenance" --interval 1y
 ```
 
+`meta.nextReviewDateRecomputed` reports whether the next review date actually
+moved. It is `false` for a project that has never been reviewed: `nextReviewDate`
+is derived from `lastReviewDate + reviewInterval`, so with no `lastReviewDate`
+there is nothing to derive from and a new interval cannot pull the project into
+the review queue on its own. Pass `--mark-reviewed` alongside `--interval` to give
+it a starting point.
+
 > **API notes.** OmniJS has no `project.markReviewed()` method — `--mark-reviewed`
 > sets `lastReviewDate` to now, which is what OmniFocus derives the review state
-> from. `nextReviewDate` is computed as `lastReviewDate + reviewInterval` and is
-> only recalculated when `lastReviewDate` is assigned; changing the interval alone
-> would leave a stale next-review date, so `--interval` re-assigns the existing
-> `lastReviewDate` to force the recompute without inventing a review that did not
-> happen. Review intervals also cannot be constructed in OmniJS — ofctl mutates a
-> copy of an existing interval instance and assigns it back.
+> from. `nextReviewDate` is only recalculated when `lastReviewDate` is assigned;
+> changing the interval alone would leave a stale next-review date, so `--interval`
+> re-assigns the existing `lastReviewDate` to force the recompute without inventing
+> a review that did not happen. Review intervals also cannot be *constructed* in
+> OmniJS: ofctl mutates the project's own existing interval instance and assigns it
+> back. A project with no interval at all is therefore an error rather than a
+> borrow from some other project — silently rewriting an unrelated project's
+> cadence would be far worse than failing.
 
 ## Note State Block (task-state / project-state)
 

@@ -1263,7 +1263,9 @@ import Testing
     ))))
 }
 
-@Test func parsesProjectReviewClearInterval() throws {
+/// `--interval none` still parses (it is rejected at the bridge with an
+/// explanatory error, not at parse time), but it no longer *clears* anything.
+@Test func parsesProjectReviewNoneInterval() throws {
     let options = try CLI.parse([
         "ofctl", "project-review", "Home Maintenance",
         "--interval", "none",
@@ -1309,21 +1311,34 @@ import Testing
         privacyScope: .unrestricted
     )
 
+    // Input-dependent: the spec must actually reach the script. Asserting only on the
+    // static template text would pass for ANY input — the earlier version of this test
+    // did exactly that and would not have caught the spec being dropped en route.
+    #expect(reviewScript.contains("interval: \"2w\""))
+
     // Write path: mutate an existing instance; never construct one.
     #expect(!reviewScript.contains("new Project.ReviewInterval"))
     #expect(!reviewScript.contains("new ReviewInterval"))
-    #expect(reviewScript.contains("interval.steps = Number(match[1])"))
-    #expect(reviewScript.contains("interval.unit = unitMap[match[2]]"))
-    // A project with no interval borrows a template rather than failing.
-    #expect(reviewScript.contains("flattenedProjects.find"))
+    #expect(reviewScript.contains("interval.steps = parsed.steps"))
+    #expect(reviewScript.contains("interval.unit = parsed.unit"))
+    // Never borrow an interval instance from another project — that could rewrite an
+    // unrelated, possibly out-of-privacy-scope project's cadence. (Don't assert on
+    // `flattenedProjects.find`; resolveProjectByNameOrId legitimately uses it.)
+    #expect(!reviewScript.contains("donor"))
+    #expect(reviewScript.contains("this project has none to modify"))
     // Changing the interval must force nextReviewDate to recompute.
     #expect(reviewScript.contains("project.lastReviewDate = project.lastReviewDate"))
+    // The spec is parsed before the dry-run return, so a preview rejects what a real run would.
+    let parseIndex = try #require(reviewScript.range(of: "const parsedInterval"))
+    let dryRunIndex = try #require(reviewScript.range(of: "if (input.dryRun)"))
+    #expect(parseIndex.lowerBound < dryRunIndex.lowerBound)
 
     // Clearing is impossible in OmniFocus; the attempt must fail with our own message.
     let clearScript = try OmniJavaScript.updateProjectReview(
         UpdateProjectReview(project: "Home Maintenance", markReviewed: false, interval: .some(nil), dryRun: false),
         privacyScope: .unrestricted
     )
+    #expect(clearScript.contains("interval: null"))
     #expect(clearScript.contains("does not allow clearing a review interval"))
 
     let projectsScript = try OmniJavaScript.projectsQuery(

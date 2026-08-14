@@ -1501,16 +1501,15 @@ enum OmniJavaScript {
             dryRun: \(review.dryRun ? "true" : "false")
           };
 
-          // OmniJS gives no way to *construct* a review interval. All four obvious routes
-          // were tried against a live database and all fail:
-          //   - the constructor form throws "CallbackObject is not a constructor"
-          //   - calling the type as a function throws "is not a function"
-          //   - an object built from its prototype is rejected by the setter
-          //   - a plain {steps, unit} object is rejected by the setter
-          // The only working path is to take an existing instance, mutate steps/unit, and
-          // assign it back. Reading `project.reviewInterval` returns a *copy*, so mutating
-          // one borrowed from another project cannot corrupt that project — also verified.
-          function makeReviewInterval(project, spec) {
+          // Validate the interval spec WITHOUT touching the database, so `--dry-run`
+          // rejects exactly what a real run would. Returns {steps, unit} or throws.
+          function parseIntervalSpec(spec) {
+            if (!spec) {
+              // OmniFocus rejects a null reviewInterval outright ("must be set to a
+              // non-null value"), so there is no way to clear one. Fail with an
+              // actionable message instead of surfacing the raw bridge error.
+              throw new Error("OmniFocus does not allow clearing a review interval — every project must have one. Set a long interval instead, e.g. --interval 1y.");
+            }
             const match = /^(\\d+)([dwmy])$/.exec(spec);
             if (!match) { throw new Error(`Invalid interval spec "${spec}" — use format like 1w, 2m, 3d, 1y`); }
             const unitMap = {
@@ -1519,47 +1518,63 @@ enum OmniJavaScript {
               m: "months",
               y: "years"
             };
+            return { steps: Number(match[1]), unit: unitMap[match[2]] };
+          }
 
-            let interval = project.reviewInterval;
+          // OmniJS gives no way to *construct* a review interval. All four obvious routes
+          // were tried against a live database and all fail:
+          //   - the constructor form throws "CallbackObject is not a constructor"
+          //   - calling the type as a function throws "is not a function"
+          //   - an object built from its prototype is rejected by the setter
+          //   - a plain {steps, unit} object is rejected by the setter
+          // The only working path is to mutate the project's own existing instance and
+          // assign it back. Deliberately NOT borrowing an instance from another project:
+          // that would hinge on reads returning a copy, and if that ever stopped holding
+          // it would silently rewrite an unrelated (possibly out-of-privacy-scope)
+          // project's cadence. OmniFocus guarantees every project has an interval, so the
+          // fallback is a loud error, not a cross-project write.
+          function applyReviewInterval(project, parsed) {
+            const interval = project.reviewInterval;
             if (!interval) {
-              // No interval on this project: borrow a template from any project that has one.
-              const donor = flattenedProjects.find(function(p) { return p.reviewInterval; });
-              if (!donor) {
-                throw new Error("Cannot set a review interval: no project in this database has one to use as a template. Set an interval on any project in OmniFocus first.");
-              }
-              interval = donor.reviewInterval;
+              throw new Error("Cannot set a review interval: this project has none to modify, and OmniJS provides no way to construct one. Set any interval on this project in OmniFocus first.");
             }
-
-            interval.steps = Number(match[1]);
-            interval.unit = unitMap[match[2]];
-            return interval;
+            interval.steps = parsed.steps;
+            interval.unit = parsed.unit;
+            project.reviewInterval = interval;
           }
 
           const project = resolveProjectByNameOrId(input.project);
           if (!project) { throw new Error(`Project not found: ${input.project}`); }
           assertProjectAvailableInPrivacyScope(project, `Project not available in current privacy scope: ${input.project}`);
 
+          // Parse before the dry-run return so a preview fails on exactly what a real run
+          // would. docs/claude-integration.md tells callers to dry-run first; a green
+          // preview followed by a hard failure would make that advice actively misleading.
+          const parsedInterval = input.interval !== undefined ? parseIntervalSpec(input.interval) : null;
+
+          // A never-reviewed project has no lastReviewDate to derive nextReviewDate from,
+          // so changing its interval cannot move it into the review queue. Report that
+          // rather than letting the caller assume the new cadence took effect.
+          const willRecomputeNextReview = parsedInterval === null
+            ? null
+            : Boolean(input.markReviewed || project.lastReviewDate);
+
           if (input.dryRun) {
             return JSON.stringify({
               dryRun: true,
               project: serializeProject(project),
-              meta: { privacyScope }
+              meta: { privacyScope, interval: parsedInterval, nextReviewDateRecomputed: willRecomputeNextReview }
             }, null, 2);
           }
 
-          if (input.interval !== undefined) {
-            if (!input.interval) {
-              // OmniFocus rejects a null reviewInterval outright ("must be set to a
-              // non-null value"), so there is no way to clear one. Fail with an
-              // actionable message instead of surfacing the raw bridge error.
-              throw new Error("OmniFocus does not allow clearing a review interval — every project must have one. Set a long interval instead, e.g. --interval 1y.");
-            }
-            project.reviewInterval = makeReviewInterval(project, input.interval);
+          if (parsedInterval) {
+            applyReviewInterval(project, parsedInterval);
             // Setting the interval alone does NOT recompute nextReviewDate; OmniFocus only
             // derives it when lastReviewDate is assigned. Without this, `--interval` looks
             // like a no-op until the project is next reviewed. Re-assigning the existing
-            // value forces the recompute while preserving real review history.
-            if (project.lastReviewDate) {
+            // value forces the recompute while preserving real review history. Skipped when
+            // --mark-reviewed will overwrite it below anyway.
+            if (!input.markReviewed && project.lastReviewDate) {
               project.lastReviewDate = project.lastReviewDate;
             }
           }
@@ -1571,7 +1586,7 @@ enum OmniJavaScript {
 
           return JSON.stringify({
             project: serializeProject(project),
-            meta: { privacyScope }
+            meta: { privacyScope, nextReviewDateRecomputed: willRecomputeNextReview }
           }, null, 2);
         })();
         """
@@ -2036,8 +2051,11 @@ function reviewIntervalUnitName(unit) {
   // A previous version compared it against a nonexistent OmniJS unit enum; the
   // ReferenceError was swallowed by a catch and every project reported
   // `"unit": null`. Never re-introduce that silent fallback.
+  if (unit == null) { return null; }
   if (typeof unit === "string" && unit.length > 0) { return unit; }
-  return unit == null ? null : String(unit);
+  // Do not coerce: String(someObject) yields "[object Object]", which is a quieter
+  // version of the same bug. If the bridge ever stops handing back a string, say so.
+  throw new Error(`Unexpected review interval unit type "${typeof unit}" from OmniFocus — expected a string.`);
 }
 
 function serializeProject(project, includeNotes) {
