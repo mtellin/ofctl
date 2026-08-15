@@ -139,17 +139,41 @@ ofctl tasks --perspective "Waiting On" --limit 50
 Custom perspectives can also be queried by the `identifier` returned from
 `ofctl perspectives`.
 
-Perspective queries use OmniFocus's own perspective engine, then apply any
-additional `ofctl` filters you pass:
+Names resolve in this order: exact custom name, custom identifier,
+case-insensitive built-in name, case-insensitive custom name. **Custom
+perspectives are matched before built-ins** so that an OmniFocus release which
+adds a built-in cannot silently shadow a same-named custom perspective.
+
+Perspective queries then apply any additional `ofctl` filters you pass:
 
 ```sh
 ofctl tasks --perspective Forecast --tag "@computer" --limit 25
 ofctl tasks --perspective "Waiting On" --due before:now --format text
 ```
 
-`ofctl` briefly switches the front OmniFocus window to read the perspective
-content tree, then restores the previous perspective. This is read-only, but the
-window may visibly change while the command runs.
+### How perspectives are read
+
+**Custom perspectives** are evaluated directly from the perspective's own filter
+rules (`archivedFilterRules`), against the task database. This is deterministic
+and does not touch your OmniFocus window.
+
+If a perspective uses a filter `ofctl` does not implement, the command **fails
+with `Unsupported perspective rule: <key>`** rather than silently returning a
+subset. A wrong-but-plausible task list is worse than an error.
+
+**Built-in perspectives** (Forecast, Flagged, Inbox, …) publish no rules, so
+these still briefly switch the front OmniFocus window to read its content tree
+and then restore the previous perspective. The window may visibly change while
+the command runs, and the read races the window's redraw — if the outline has
+not rendered, the command errors instead of reporting zero tasks.
+
+### Stale tag references
+
+A perspective rule stores tag *identifiers*, not names. If a tag referenced by a
+perspective was deleted — or replaced by a same-named tag when a tag tree was
+reorganized — the rule can never match and the perspective returns nothing. This
+is a property of the saved perspective, not of the query, and the fix is to
+re-pick the tag in OmniFocus's perspective editor.
 
 ## Availability And Date Filters
 

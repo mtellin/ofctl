@@ -188,21 +188,278 @@ enum OmniJavaScript {
           function perspectiveNamed(name) {
             if (!name) { return null; }
 
-            const normalized = name.toLowerCase();
-            const builtIn = Perspective.BuiltIn.all.find(p => p.name.toLowerCase() === normalized);
-            if (builtIn) { return builtIn; }
-
+            // Custom perspectives are resolved BEFORE built-ins. Built-in matching is
+            // case-insensitive, so checking it first lets any OmniFocus release that
+            // ships a new built-in silently shadow a same-named custom perspective —
+            // the built-in's (usually empty) contents get returned with no error. That
+            // bug cost us a morning with a custom "Today"; "Completed" and "Changed"
+            // are one release away from the same fate.
             const custom = Perspective.Custom.byName(name);
             if (custom) { return custom; }
 
             const customByIdentifier = Perspective.Custom.byIdentifier(name);
             if (customByIdentifier) { return customByIdentifier; }
 
+            const normalized = name.toLowerCase();
+            const builtIn = Perspective.BuiltIn.all.find(p => p.name.toLowerCase() === normalized);
+            if (builtIn) { return builtIn; }
+
+            const customInsensitive = Perspective.Custom.all.find(p => p.name.toLowerCase() === normalized);
+            if (customInsensitive) { return customInsensitive; }
+
             throw new Error(`Perspective not found: ${name}`);
           }
 
-          function tasksInPerspective(name) {
-            const perspective = perspectiveNamed(name);
+          // --- custom perspective rule evaluation ----------------------------------
+          // A custom perspective publishes its filter as declarative JSON through
+          // `archivedFilterRules`. Evaluating that JSON against the database is the
+          // only deterministic way to read a perspective. The alternative — assigning
+          // the perspective to a window and walking `window.content.rootNode` — mutates
+          // the user's front window AND races the outline's render, silently returning
+          // an empty list when the scrape wins. OmniFocus exposes no way to force or
+          // await that render (Window has only selectObjects/forecastDay* and
+          // Window.content has no members at all), so the race cannot be closed.
+          //
+          // Unrecognized rules THROW rather than being skipped: a perspective read that
+          // quietly ignores a filter it does not understand returns a plausible wrong
+          // answer, which is the exact failure mode this function exists to remove.
+
+          function perspectiveRelativeMillis(component, amount) {
+            const perUnit = {
+              day: 86400000,
+              week: 604800000,
+              month: 2592000000,
+              year: 31536000000
+            }[component];
+            if (perUnit === undefined) {
+              throw new Error(`Unsupported perspective date component: ${component}`);
+            }
+            return perUnit * amount;
+          }
+
+          // {} means "unbounded" — OmniFocus emits an empty spec for a one-sided range.
+          function perspectiveDateBound(spec) {
+            if (!spec || Object.keys(spec).length === 0) { return null; }
+            if (spec.dynamic === "now") { return new Date(); }
+            if (spec.dynamic === "today") { return startOfDay(new Date()); }
+            if (typeof spec.relativeAfterAmount === "number") {
+              return new Date(Date.now() + perspectiveRelativeMillis(spec.relativeComponent, spec.relativeAfterAmount));
+            }
+            if (typeof spec.relativeBeforeAmount === "number") {
+              return new Date(Date.now() - perspectiveRelativeMillis(spec.relativeComponent, spec.relativeBeforeAmount));
+            }
+            throw new Error(`Unsupported perspective date spec: ${JSON.stringify(spec)}`);
+          }
+
+          function perspectiveDateFor(task, field) {
+            if (field === "planned") { return task.effectivePlannedDate; }
+            if (field === "defer") { return task.effectiveDeferDate; }
+            if (field === "due") { return task.effectiveDueDate; }
+            if (field === "completed") { return task.effectiveCompletedDate; }
+            if (field === "added") { return task.added; }
+            if (field === "modified") { return task.modified; }
+            throw new Error(`Unsupported perspective date field: ${field}`);
+          }
+
+          function perspectiveAvailabilityMatches(task, availability) {
+            if (availability === "remaining") {
+              return !taskEffectivelyCompleted(task) && !taskEffectivelyDropped(task);
+            }
+            if (availability === "completed") { return taskEffectivelyCompleted(task); }
+            if (availability === "dropped") { return taskEffectivelyDropped(task); }
+            const status = task.taskStatus;
+            if (availability === "available") {
+              return status === Task.Status.Available
+                || status === Task.Status.Next
+                || status === Task.Status.DueSoon
+                || status === Task.Status.Overdue;
+            }
+            if (availability === "firstAvailable") { return status === Task.Status.Next; }
+            throw new Error(`Unsupported perspective availability: ${availability}`);
+          }
+
+          function perspectiveStatusMatches(task, status) {
+            if (status === "flagged") { return task.flagged; }
+            if (status === "due") {
+              return task.taskStatus === Task.Status.DueSoon || task.taskStatus === Task.Status.Overdue;
+            }
+            throw new Error(`Unsupported perspective action status: ${status}`);
+          }
+
+          // Focus ids may name a folder, a project, or an ancestor action group.
+          function perspectiveWithinFocus(task, ids) {
+            const wanted = new Set(ids);
+            const project = task.containingProject;
+            if (project) {
+              if (wanted.has(project.id.primaryKey)) { return true; }
+              let folder = project.parentFolder;
+              while (folder) {
+                if (wanted.has(folder.id.primaryKey)) { return true; }
+                folder = folder.parent;
+              }
+            }
+            let parent = task.parent;
+            while (parent) {
+              if (wanted.has(parent.id.primaryKey)) { return true; }
+              parent = parent.parent;
+            }
+            return false;
+          }
+
+          function perspectiveProjectStatusMatches(task, wanted) {
+            const project = task.containingProject;
+            if (!project) { return false; }
+            if (wanted === "active") { return project.status === Project.Status.Active; }
+            if (wanted === "onHold") { return project.status === Project.Status.OnHold; }
+            if (wanted === "done") { return project.status === Project.Status.Done; }
+            if (wanted === "dropped") { return project.status === Project.Status.Dropped; }
+            if (wanted === "stalled") {
+              // "stalled" is not a Project.Status — it means active with nothing actionable.
+              if (project.status !== Project.Status.Active) { return false; }
+              return !project.flattenedTasks.some(candidate => {
+                const status = candidate.taskStatus;
+                return status === Task.Status.Available
+                  || status === Task.Status.Next
+                  || status === Task.Status.DueSoon
+                  || status === Task.Status.Overdue;
+              });
+            }
+            throw new Error(`Unsupported perspective project status: ${wanted}`);
+          }
+
+          function perspectiveSearchMatches(task, terms) {
+            const haystack = ((task.name || "") + " " + (task.note || "")).toLowerCase();
+            return terms.every(term => haystack.includes(String(term).toLowerCase()));
+          }
+
+          function perspectiveHasTags(task, ids, mode) {
+            const taskTagIds = new Set(task.tags.map(tag => tag.id.primaryKey));
+            if (mode === "any") { return ids.some(id => taskTagIds.has(id)); }
+            return ids.every(id => taskTagIds.has(id));
+          }
+
+          function perspectiveTaskIsGroup(task) {
+            return childTasks(task).length > 0;
+          }
+
+          // Every recognized key in a single rule object is ANDed together; OmniFocus
+          // packs `actionDateField` alongside the date predicate it modifies.
+          function perspectiveRuleMatches(task, rule) {
+            // A disabled rule is retained in the JSON but must not constrain anything.
+            if (rule.disabledRule !== undefined) { return true; }
+            if (rule.aggregateRules !== undefined) {
+              return perspectiveRulesMatch(task, rule.aggregateRules, rule.aggregateType);
+            }
+
+            const dateField = rule.actionDateField !== undefined ? rule.actionDateField : "due";
+
+            for (const key of Object.keys(rule)) {
+              const value = rule[key];
+              switch (key) {
+                case "actionDateField":
+                  break;
+                case "actionAvailability":
+                  if (!perspectiveAvailabilityMatches(task, value)) { return false; }
+                  break;
+                case "actionStatus":
+                  if (!perspectiveStatusMatches(task, value)) { return false; }
+                  break;
+                case "actionIsLeaf":
+                  if (perspectiveTaskIsGroup(task) === value) { return false; }
+                  break;
+                case "actionIsProjectOrGroup":
+                  if (perspectiveTaskIsGroup(task) !== value) { return false; }
+                  break;
+                case "actionIsInSingleActionsList": {
+                  const project = task.containingProject;
+                  const singleton = project !== null && project.singletonActionHolder === true;
+                  if (singleton !== value) { return false; }
+                  break;
+                }
+                case "actionRepeats":
+                  if ((task.repetitionRule !== null) !== value) { return false; }
+                  break;
+                case "actionHasDeferDate":
+                  if ((task.effectiveDeferDate !== null) !== value) { return false; }
+                  break;
+                case "actionHasPlannedDate":
+                  if ((task.effectivePlannedDate !== null) !== value) { return false; }
+                  break;
+                case "actionHasAnyOfTags":
+                  if (!perspectiveHasTags(task, value, "any")) { return false; }
+                  break;
+                case "actionHasAllOfTags":
+                  if (!perspectiveHasTags(task, value, "all")) { return false; }
+                  break;
+                case "actionWithinFocus":
+                  if (!perspectiveWithinFocus(task, value)) { return false; }
+                  break;
+                case "actionHasProjectWithStatus":
+                  if (!perspectiveProjectStatusMatches(task, value)) { return false; }
+                  break;
+                case "actionMatchingSearch":
+                  if (!perspectiveSearchMatches(task, value)) { return false; }
+                  break;
+                case "actionWithinDuration": {
+                  const minutes = task.estimatedMinutes;
+                  if (minutes === null || minutes > value) { return false; }
+                  break;
+                }
+                case "actionDateIsToday": {
+                  const date = perspectiveDateFor(task, dateField);
+                  const today = startOfDay(new Date());
+                  const isToday = date !== null && date >= today && date < addDays(today, 1);
+                  if (isToday !== value) { return false; }
+                  break;
+                }
+                case "actionDateIsInTheNext": {
+                  const date = perspectiveDateFor(task, dateField);
+                  if (date === null) { return false; }
+                  const now = new Date();
+                  const bound = perspectiveDateBound(value);
+                  if (!(date >= now && date <= bound)) { return false; }
+                  break;
+                }
+                case "actionDateIsInThePast": {
+                  const date = perspectiveDateFor(task, dateField);
+                  if (date === null) { return false; }
+                  const now = new Date();
+                  const bound = perspectiveDateBound(value);
+                  if (!(date <= now && date >= bound)) { return false; }
+                  break;
+                }
+                case "actionDateIsBeforeDateSpec": {
+                  const bound = perspectiveDateBound(value);
+                  if (bound === null) { break; }
+                  const date = perspectiveDateFor(task, dateField);
+                  if (date === null || !(date < bound)) { return false; }
+                  break;
+                }
+                case "actionDateIsAfterDateSpec": {
+                  const bound = perspectiveDateBound(value);
+                  if (bound === null) { break; }
+                  const date = perspectiveDateFor(task, dateField);
+                  if (date === null || !(date > bound)) { return false; }
+                  break;
+                }
+                default:
+                  throw new Error(`Unsupported perspective rule: ${key}`);
+              }
+            }
+            return true;
+          }
+
+          function perspectiveRulesMatch(task, rules, aggregateType) {
+            const type = aggregateType || "all";
+            if (type === "all") { return rules.every(rule => perspectiveRuleMatches(task, rule)); }
+            if (type === "any") { return rules.some(rule => perspectiveRuleMatches(task, rule)); }
+            if (type === "none") { return !rules.some(rule => perspectiveRuleMatches(task, rule)); }
+            throw new Error(`Unsupported perspective aggregate type: ${type}`);
+          }
+
+          // Built-ins publish no rules, so they still need the window walk. Guard it so
+          // a failed assignment or an unrendered outline is an error, not a silent zero.
+          function tasksInBuiltInPerspective(perspective, name) {
             const win = document.windows[0];
             const originalPerspective = win.perspective;
             const seen = new Set();
@@ -210,7 +467,14 @@ enum OmniJavaScript {
 
             try {
               win.perspective = perspective;
-              win.content.rootNode.apply(node => {
+              if (win.perspective !== perspective) {
+                throw new Error(`Could not switch window to perspective: ${name}`);
+              }
+              const rootNode = win.content ? win.content.rootNode : null;
+              if (!rootNode) {
+                throw new Error(`Perspective "${name}" produced no window content tree`);
+              }
+              rootNode.apply(node => {
                 const object = node.object;
                 if (!(object instanceof Task)) { return; }
                 if (seen.has(object.id.primaryKey)) { return; }
@@ -224,6 +488,21 @@ enum OmniJavaScript {
             }
 
             return tasks;
+          }
+
+          function tasksInPerspective(name) {
+            const perspective = perspectiveNamed(name);
+
+            if (perspective instanceof Perspective.Custom) {
+              const rules = perspective.archivedFilterRules;
+              if (!rules) {
+                throw new Error(`Perspective "${name}" exposes no filter rules`);
+              }
+              const source = privacyScope ? privacyScopedSourceTasks() : flattenedTasks;
+              return source.filter(task => perspectiveRulesMatch(task, rules, "all"));
+            }
+
+            return tasksInBuiltInPerspective(perspective, name);
           }
 
           function tagMatches(task) {
