@@ -224,29 +224,30 @@ enum OmniJavaScript {
           // quietly ignores a filter it does not understand returns a plausible wrong
           // answer, which is the exact failure mode this function exists to remove.
 
-          function perspectiveRelativeMillis(component, amount) {
-            const perUnit = {
-              day: 86400000,
-              week: 604800000,
-              month: 2592000000,
-              year: 31536000000
-            }[component];
-            if (perUnit === undefined) {
-              throw new Error(`Unsupported perspective date component: ${component}`);
-            }
-            return perUnit * amount;
+          // Calendar arithmetic, not fixed millisecond offsets: a month is not 30 days, a
+          // year is not 365, and adding raw ms across a DST boundary shifts the result by
+          // an hour — enough to flip a task whose date sits near midnight.
+          function perspectiveShiftDate(from, component, amount) {
+            const d = new Date(from.getTime());
+            if (component === "day") { d.setDate(d.getDate() + amount); return d; }
+            if (component === "week") { d.setDate(d.getDate() + amount * 7); return d; }
+            if (component === "month") { d.setMonth(d.getMonth() + amount); return d; }
+            if (component === "year") { d.setFullYear(d.getFullYear() + amount); return d; }
+            throw new Error(`Unsupported perspective date component: ${component}`);
           }
 
           // {} means "unbounded" — OmniFocus emits an empty spec for a one-sided range.
+          // Callers MUST null-check the result; `date <= null` coerces to `date <= 0` and
+          // silently excludes every task.
           function perspectiveDateBound(spec) {
             if (!spec || Object.keys(spec).length === 0) { return null; }
             if (spec.dynamic === "now") { return new Date(); }
             if (spec.dynamic === "today") { return startOfDay(new Date()); }
             if (typeof spec.relativeAfterAmount === "number") {
-              return new Date(Date.now() + perspectiveRelativeMillis(spec.relativeComponent, spec.relativeAfterAmount));
+              return perspectiveShiftDate(new Date(), spec.relativeComponent, spec.relativeAfterAmount);
             }
             if (typeof spec.relativeBeforeAmount === "number") {
-              return new Date(Date.now() - perspectiveRelativeMillis(spec.relativeComponent, spec.relativeBeforeAmount));
+              return perspectiveShiftDate(new Date(), spec.relativeComponent, -spec.relativeBeforeAmount);
             }
             throw new Error(`Unsupported perspective date spec: ${JSON.stringify(spec)}`);
           }
@@ -261,25 +262,43 @@ enum OmniJavaScript {
             throw new Error(`Unsupported perspective date field: ${field}`);
           }
 
+          // Task.Status values are mutually exclusive, so "available" is a set of statuses.
+          function perspectiveStatusIsAvailable(status) {
+            return status === Task.Status.Available
+              || status === Task.Status.Next
+              || status === Task.Status.DueSoon
+              || status === Task.Status.Overdue;
+          }
+
           function perspectiveAvailabilityMatches(task, availability) {
             if (availability === "remaining") {
               return !taskEffectivelyCompleted(task) && !taskEffectivelyDropped(task);
             }
             if (availability === "completed") { return taskEffectivelyCompleted(task); }
             if (availability === "dropped") { return taskEffectivelyDropped(task); }
-            const status = task.taskStatus;
             if (availability === "available") {
-              return status === Task.Status.Available
-                || status === Task.Status.Next
-                || status === Task.Status.DueSoon
-                || status === Task.Status.Overdue;
+              return perspectiveStatusIsAvailable(task.taskStatus);
             }
-            if (availability === "firstAvailable") { return status === Task.Status.Next; }
+            if (availability === "firstAvailable") {
+              // Can't just test Task.Status.Next: Overdue and DueSoon shadow it, so an
+              // action stops reporting Next the moment it comes due. Testing for those
+              // statuses instead would over-match — every overdue task in the database
+              // would qualify, not just the first action of its container. Ask the
+              // question directly: is this the first available task among its siblings?
+              if (!perspectiveStatusIsAvailable(task.taskStatus)) { return false; }
+              const container = task.parent || task.containingProject;
+              if (!container) { return true; }
+              const siblings = container.children.filter(child => child instanceof Task);
+              const first = siblings.find(child => perspectiveStatusIsAvailable(child.taskStatus));
+              return first === undefined || first.id.primaryKey === task.id.primaryKey;
+            }
             throw new Error(`Unsupported perspective availability: ${availability}`);
           }
 
           function perspectiveStatusMatches(task, status) {
-            if (status === "flagged") { return task.flagged; }
+            // effectiveFlagged, not flagged: a task inherits its flag from a flagged
+            // project or action group, and OmniFocus's own filter honors that.
+            if (status === "flagged") { return task.effectiveFlagged; }
             if (status === "due") {
               return task.taskStatus === Task.Status.DueSoon || task.taskStatus === Task.Status.Overdue;
             }
@@ -332,10 +351,35 @@ enum OmniJavaScript {
             return terms.every(term => haystack.includes(String(term).toLowerCase()));
           }
 
+          // OmniFocus tag filters are hierarchical: selecting a parent tag surfaces tasks
+          // carrying any descendant of it. Matching only directly-assigned tags would make
+          // any rule targeting a parent return nothing — and this tag tree is parent-heavy
+          // (Context and Status hold no direct assignments at all, only descendants).
+          const perspectiveTagFamilyCache = new Map();
+
+          function perspectiveTagFamily(id) {
+            const cached = perspectiveTagFamilyCache.get(id);
+            if (cached) { return cached; }
+            const family = new Set([id]);
+            const root = flattenedTags.find(tag => tag.id.primaryKey === id);
+            if (root) {
+              root.flattenedChildren.forEach(child => family.add(child.id.primaryKey));
+            }
+            perspectiveTagFamilyCache.set(id, family);
+            return family;
+          }
+
           function perspectiveHasTags(task, ids, mode) {
             const taskTagIds = new Set(task.tags.map(tag => tag.id.primaryKey));
-            if (mode === "any") { return ids.some(id => taskTagIds.has(id)); }
-            return ids.every(id => taskTagIds.has(id));
+            const satisfied = id => {
+              const family = perspectiveTagFamily(id);
+              for (const tagId of taskTagIds) {
+                if (family.has(tagId)) { return true; }
+              }
+              return false;
+            };
+            if (mode === "any") { return ids.some(satisfied); }
+            return ids.every(satisfied);
           }
 
           function perspectiveTaskIsGroup(task) {
@@ -503,14 +547,39 @@ enum OmniJavaScript {
             return tasks;
           }
 
+          // A perspective whose rules ask for completed/dropped tasks must not then have
+          // them stripped by the default outer filter. These are set while resolving the
+          // perspective and consulted by the main predicate below.
+          let perspectiveSelectsCompleted = false;
+          let perspectiveSelectsDropped = false;
+
+          function noteAvailabilitySelections(rules) {
+            (function walk(rule) {
+              if (Array.isArray(rule)) { return rule.forEach(walk); }
+              if (!rule || typeof rule !== "object") { return; }
+              Object.keys(rule).forEach(key => {
+                if (key === "disabledRule") { return; }
+                if (key === "actionAvailability") {
+                  if (rule[key] === "completed") { perspectiveSelectsCompleted = true; }
+                  if (rule[key] === "dropped") { perspectiveSelectsDropped = true; }
+                  return;
+                }
+                walk(rule[key]);
+              });
+            })(rules);
+          }
+
           function tasksInPerspective(name) {
             const perspective = perspectiveNamed(name);
 
             if (perspective instanceof Perspective.Custom) {
               const rules = perspective.archivedFilterRules;
-              if (!rules) {
+              // `!rules` alone lets an empty array through, and an empty rule list matches
+              // every task — the perspective would silently resolve to the whole database.
+              if (!rules || rules.length === 0) {
                 throw new Error(`Perspective "${name}" exposes no filter rules`);
               }
+              noteAvailabilitySelections(rules);
               const source = privacyScope ? privacyScopedSourceTasks() : flattenedTasks;
               return source.filter(task => perspectiveRulesMatch(task, rules, "all"));
             }
@@ -668,9 +737,12 @@ enum OmniJavaScript {
               // on-hold ancestors) — matches what the OF UI shows as available right now
               if (availableFilter === "now" && task.taskStatus === Task.Status.Blocked) { return false; }
             } else {
-              // no --available flag: raw mode — respect explicit --include-completed / --include-dropped flags only
-              if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task)) { return false; }
-              if (!includeDropped && taskEffectivelyDropped(task)) { return false; }
+              // no --available flag: raw mode — respect explicit --include-completed / --include-dropped flags only.
+              // A perspective that explicitly selects completed/dropped tasks implies the
+              // matching flag: otherwise its own result set is stripped back out here and
+              // the command reports an empty perspective with no error.
+              if (!includeCompleted && !completedFilter && !perspectiveSelectsCompleted && taskEffectivelyCompleted(task)) { return false; }
+              if (!includeDropped && !perspectiveSelectsDropped && taskEffectivelyDropped(task)) { return false; }
             }
             if (!projectMatches(task)) { return false; }
             if (!folderMatches(task)) { return false; }
@@ -2080,15 +2152,29 @@ enum OmniJavaScript {
             throw new Error(`Tag not found: ${input.tag}`);
           }
 
+          // Deleting a tag also deletes its descendants and their assignments, so a count
+          // of only directly-assigned tasks understates an irreversible delete. Reporting
+          // "0 tasks" for a parent tag whose children hold hundreds is how a dry-run gives
+          // false confidence.
+          const tagDescendants = tag.flattenedChildren;
+          const tagDescendantTaskIds = new Set();
+          tagDescendants.forEach(child => {
+            child.tasks.forEach(task => tagDescendantTaskIds.add(task.id.primaryKey));
+          });
+          tag.tasks.forEach(task => tagDescendantTaskIds.add(task.id.primaryKey));
+
           const tagInfo = {
             id: tag.id.primaryKey,
             name: tag.name,
             path: tagPath(tag),
             childCount: tag.tags.length,
+            descendantTagCount: tagDescendants.length,
             // Tag has no `flattenedTasks` in OmniJS — reading it threw a TypeError and
             // made tag-delete unusable, dry-run included.
             taskCount: tag.tasks.length,
-            remainingTaskCount: tag.remainingTasks.length
+            remainingTaskCount: tag.remainingTasks.length,
+            // What the delete actually touches, including via child tags.
+            affectedTaskCount: tagDescendantTaskIds.size
           };
 
           if (input.dryRun) {

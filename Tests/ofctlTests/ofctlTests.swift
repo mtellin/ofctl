@@ -1467,8 +1467,10 @@ import Testing
 
     #expect(script.contains("taskEffectivelyCompleted(task)"))
     #expect(script.contains("taskEffectivelyDropped(task)"))
-    #expect(script.contains("if (!includeCompleted && !completedFilter && taskEffectivelyCompleted(task))"))
-    #expect(script.contains("if (!includeDropped && taskEffectivelyDropped(task))"))
+    // A perspective whose own rules select completed/dropped tasks relaxes these guards,
+    // so its result set is not stripped back out by the default filter.
+    #expect(script.contains("if (!includeCompleted && !completedFilter && !perspectiveSelectsCompleted && taskEffectivelyCompleted(task))"))
+    #expect(script.contains("if (!includeDropped && !perspectiveSelectsDropped && taskEffectivelyDropped(task))"))
     #expect(script.contains("task.effectiveCompletedDate || task.completionDate"))
     #expect(script.contains("return task.effectiveCompletedDate !== null;"))
     #expect(script.contains("return task.effectiveDropDate !== null;"))
