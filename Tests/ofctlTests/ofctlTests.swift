@@ -1946,3 +1946,222 @@ console.log("ok");
     #expect(script.contains("function resolveProjectByNameOrId"))
     #expect(script.contains("resolveProjectByNameOrId(name)"))
 }
+
+// Executes the extracted perspective rule evaluator under Node against synthetic
+// tasks. Every case below corresponds to a defect that shipped: the evaluator was
+// validated only by eyeballing counts against the live database, and ten bugs got
+// through that way. Stubs replace the OmniJS globals the block reads.
+@Test func perspectiveRuleEvaluatorUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let repoRoot = thisFile
+        .deletingLastPathComponent()   // ofctlTests/
+        .deletingLastPathComponent()   // Tests/
+        .deletingLastPathComponent()   // repo root
+    let source = repoRoot.appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+
+    let text = try String(contentsOf: source, encoding: .utf8)
+    let lines = text.components(separatedBy: "\n")
+    guard let open = lines.firstIndex(where: { $0.contains("private let perspectiveRuleSupport = #\"\"\"") }) else {
+        Issue.record("could not locate perspectiveRuleSupport block in \(source.path)")
+        return
+    }
+    var close = -1
+    for i in (open + 1)..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "\"\"\"#" {
+        close = i
+        break
+    }
+    #expect(close > open)
+    let js = lines[(open + 1)..<close].joined(separator: "\n")
+
+    let harness = #"""
+
+// --- OmniJS stubs ---------------------------------------------------------
+// Task must be a constructor, not a plain object: the evaluator uses
+// `child instanceof Task` when resolving firstAvailable.
+function Task(){}
+Task.Status = { Available:"Available", Blocked:"Blocked", Completed:"Completed",
+  Dropped:"Dropped", DueSoon:"DueSoon", Next:"Next", Overdue:"Overdue" };
+const Project = { Status: { Active:"Active", OnHold:"OnHold", Done:"Done", Dropped:"Dropped" } };
+
+function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function addDays(d,n){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()+n); }
+function taskEffectivelyCompleted(t){ return t.effectiveCompletedDate !== null; }
+function taskEffectivelyDropped(t){ return t.effectiveDropDate !== null; }
+function childTasks(t){ return t.children || []; }
+
+// Tag tree: Context is a parent holding no direct assignments (mirrors the real
+// database, where Context and Status have 0 direct and 900+ descendant tasks).
+const tagInside = {id:{primaryKey:"tag-inside"}, name:"@home-inside", flattenedChildren:[]};
+const tagOutside = {id:{primaryKey:"tag-outside"}, name:"@home-outside", flattenedChildren:[]};
+const tagContext = {id:{primaryKey:"tag-context"}, name:"Context", flattenedChildren:[tagInside, tagOutside]};
+const flattenedTags = [tagContext, tagInside, tagOutside];
+
+const DAY = 86400000;
+const now = new Date();
+const yesterday = new Date(now.getTime() - DAY);
+const tomorrow  = new Date(now.getTime() + DAY);
+const lastWeek  = new Date(now.getTime() - 7*DAY);
+const nextYear  = new Date(now.getTime() + 300*DAY);
+
+function mkTask(o){
+  return Object.assign(new Task(), {
+    id:{primaryKey:"t"+(mkTask.n=(mkTask.n||0)+1)},
+    name:"task", note:"", tags:[], children:[], parent:null, containingProject:null,
+    taskStatus:Task.Status.Available, flagged:false, effectiveFlagged:false,
+    effectiveCompletedDate:null, effectiveDropDate:null,
+    effectivePlannedDate:null, effectiveDeferDate:null, effectiveDueDate:null,
+    repetitionRule:null, estimatedMinutes:null, added:now, modified:now
+  }, o);
+}
+const activeProject = {id:{primaryKey:"p1"}, name:"P", status:Project.Status.Active,
+  containsSingletonActions:false, parentFolder:null, flattenedTasks:[]};
+
+const fails = [];
+function check(label, rules, task, expected){
+  let got;
+  try { got = perspectiveRulesMatch(task, rules, "all"); }
+  catch(e){ got = "THREW: " + e.message; }
+  if (got !== expected) fails.push(label + " -> expected " + expected + ", got " + got);
+}
+function checkThrows(label, rules, task){
+  try { perspectiveRulesMatch(task, rules, "all"); fails.push(label + " -> expected a throw, got none"); }
+  catch(e){ /* expected */ }
+}
+
+// --- availability ---------------------------------------------------------
+check("available: Available", [{actionAvailability:"available"}], mkTask({}), true);
+check("available: Overdue counts", [{actionAvailability:"available"}], mkTask({taskStatus:Task.Status.Overdue}), true);
+check("available: Blocked excluded", [{actionAvailability:"available"}], mkTask({taskStatus:Task.Status.Blocked}), false);
+check("remaining: not completed", [{actionAvailability:"remaining"}], mkTask({}), true);
+check("remaining: completed excluded", [{actionAvailability:"remaining"}], mkTask({effectiveCompletedDate:now}), false);
+check("completed: matches", [{actionAvailability:"completed"}], mkTask({effectiveCompletedDate:now}), true);
+check("dropped: matches", [{actionAvailability:"dropped"}], mkTask({effectiveDropDate:now}), true);
+
+// firstAvailable is positional. Testing Task.Status.Next alone silently drops an
+// action the moment it comes due, because Overdue/DueSoon shadow Next.
+const firstT = mkTask({taskStatus:Task.Status.Overdue});
+const secondT = mkTask({taskStatus:Task.Status.Available});
+const seqParent = {id:{primaryKey:"g1"}, children:[firstT, secondT]};
+firstT.parent = seqParent; secondT.parent = seqParent;
+check("firstAvailable: overdue first action still counts", [{actionAvailability:"firstAvailable"}], firstT, true);
+check("firstAvailable: second action does not", [{actionAvailability:"firstAvailable"}], secondT, false);
+
+// --- status ---------------------------------------------------------------
+check("flagged: direct", [{actionStatus:"flagged"}], mkTask({flagged:true, effectiveFlagged:true}), true);
+check("flagged: inherited from project", [{actionStatus:"flagged"}], mkTask({flagged:false, effectiveFlagged:true}), true);
+check("flagged: unflagged", [{actionStatus:"flagged"}], mkTask({}), false);
+check("due: overdue", [{actionStatus:"due"}], mkTask({taskStatus:Task.Status.Overdue}), true);
+check("due: available is not due", [{actionStatus:"due"}], mkTask({}), false);
+
+// --- tags (hierarchical) --------------------------------------------------
+const inside = mkTask({tags:[tagInside]});
+check("anyOfTags: direct match", [{actionHasAnyOfTags:["tag-inside"]}], inside, true);
+check("anyOfTags: parent matches descendant", [{actionHasAnyOfTags:["tag-context"]}], inside, true);
+check("anyOfTags: unrelated tag", [{actionHasAnyOfTags:["tag-outside"]}], inside, false);
+check("anyOfTags: deleted tag id matches nothing", [{actionHasAnyOfTags:["ghost"]}], inside, false);
+check("allOfTags: needs every tag", [{actionHasAllOfTags:["tag-inside","tag-outside"]}], inside, false);
+// A dead tag in a `none` block must not silently stop excluding.
+check("none + dead tag still excludes nothing", [{aggregateRules:[{actionHasAnyOfTags:["ghost"]}], aggregateType:"none"}], inside, true);
+
+// --- dates ----------------------------------------------------------------
+const plannedPast = mkTask({effectivePlannedDate:yesterday});
+const plannedFuture = mkTask({effectivePlannedDate:tomorrow});
+const beforeNow = [{actionDateField:"planned", actionDateIsAfterDateSpec:{}, actionDateIsBeforeDateSpec:{dynamic:"now"}}];
+check("planned before now: past matches", beforeNow, plannedPast, true);
+check("planned before now: future excluded", beforeNow, plannedFuture, false);
+check("planned before now: unset excluded", beforeNow, mkTask({}), false);
+// The unbounded {} spec must be a no-op. Treating null as a bound compares
+// `date <= null`, which coerces to `date <= 0` and excludes every task.
+check("unbounded after-spec is a no-op", [{actionDateField:"planned", actionDateIsAfterDateSpec:{}}], plannedPast, true);
+check("dateIsToday: today matches", [{actionDateField:"planned", actionDateIsToday:true}], mkTask({effectivePlannedDate:now}), true);
+check("dateIsToday: yesterday does not", [{actionDateField:"planned", actionDateIsToday:true}], plannedPast, false);
+check("inTheNext 365d: tomorrow matches",
+  [{actionDateField:"defer", actionDateIsInTheNext:{relativeAfterAmount:365, relativeComponent:"day"}}],
+  mkTask({effectiveDeferDate:tomorrow}), true);
+check("inTheNext 365d: past does not",
+  [{actionDateField:"defer", actionDateIsInTheNext:{relativeAfterAmount:365, relativeComponent:"day"}}],
+  mkTask({effectiveDeferDate:yesterday}), false);
+check("inThePast 30d: last week matches",
+  [{actionDateField:"planned", actionDateIsInThePast:{relativeBeforeAmount:30, relativeComponent:"day"}}],
+  mkTask({effectivePlannedDate:lastWeek}), true);
+check("inThePast 30d: 300 days ago does not",
+  [{actionDateField:"planned", actionDateIsInThePast:{relativeBeforeAmount:30, relativeComponent:"day"}}],
+  mkTask({effectivePlannedDate:new Date(now.getTime()-300*DAY)}), false);
+// Calendar arithmetic, not 30-day months: 1 month out must still contain a date
+// ~29 days ahead regardless of which month it is.
+check("inTheNext 1 month uses calendar months",
+  [{actionDateField:"defer", actionDateIsInTheNext:{relativeAfterAmount:1, relativeComponent:"month"}}],
+  mkTask({effectiveDeferDate:new Date(now.getTime()+28*DAY)}), true);
+
+// --- structural -----------------------------------------------------------
+const group = mkTask({children:[mkTask({})]});
+check("isLeaf: leaf matches", [{actionIsLeaf:true}], mkTask({}), true);
+check("isLeaf: group excluded", [{actionIsLeaf:true}], group, false);
+check("isProjectOrGroup: group matches", [{actionIsProjectOrGroup:true}], group, true);
+check("repeats: recurring matches", [{actionRepeats:true}], mkTask({repetitionRule:{}}), true);
+check("repeats: one-off excluded", [{actionRepeats:true}], mkTask({}), false);
+check("hasDeferDate", [{actionHasDeferDate:true}], mkTask({effectiveDeferDate:tomorrow}), true);
+check("hasPlannedDate false-form", [{actionHasPlannedDate:false}], mkTask({}), true);
+check("withinDuration 15: 10m matches", [{actionWithinDuration:15}], mkTask({estimatedMinutes:10}), true);
+check("withinDuration 15: 30m excluded", [{actionWithinDuration:15}], mkTask({estimatedMinutes:30}), false);
+check("withinDuration 15: unestimated excluded", [{actionWithinDuration:15}], mkTask({}), false);
+check("singleActionsList", [{actionIsInSingleActionsList:true}],
+  mkTask({containingProject:Object.assign({}, activeProject, {containsSingletonActions:true})}), true);
+check("projectWithStatus active", [{actionHasProjectWithStatus:"active"}], mkTask({containingProject:activeProject}), true);
+check("matchingSearch hits name", [{actionMatchingSearch:["someday"]}], mkTask({name:"A Someday thing"}), true);
+check("matchingSearch miss", [{actionMatchingSearch:["nope"]}], mkTask({name:"A Someday thing"}), false);
+
+// --- aggregation ----------------------------------------------------------
+const flaggedT = mkTask({flagged:true, effectiveFlagged:true});
+check("any: one branch true", [{aggregateRules:[{actionStatus:"flagged"},{actionStatus:"due"}], aggregateType:"any"}], flaggedT, true);
+check("any: no branch true", [{aggregateRules:[{actionStatus:"flagged"},{actionStatus:"due"}], aggregateType:"any"}], mkTask({}), false);
+check("all: both required", [{aggregateRules:[{actionStatus:"flagged"},{actionIsLeaf:true}], aggregateType:"all"}], flaggedT, true);
+check("none: excludes match", [{aggregateRules:[{actionStatus:"flagged"}], aggregateType:"none"}], flaggedT, false);
+check("none: passes non-match", [{aggregateRules:[{actionStatus:"flagged"}], aggregateType:"none"}], mkTask({}), true);
+
+// A rule switched off in the editor persists as `disabledRule`. Treating it as
+// true made an `any` group match every task — this turned Due Soon into 447/475.
+check("disabled rule inside any does not match everything",
+  [{aggregateRules:[{actionStatus:"flagged"},{disabledRule:{actionHasAnyOfTags:["ghost"]}}], aggregateType:"any"}],
+  mkTask({}), false);
+check("disabled rule inside all is a no-op",
+  [{aggregateRules:[{actionIsLeaf:true},{disabledRule:{actionStatus:"flagged"}}], aggregateType:"all"}],
+  mkTask({}), true);
+check("disabled rule inside none excludes nothing",
+  [{aggregateRules:[{disabledRule:{actionStatus:"flagged"}}], aggregateType:"none"}],
+  flaggedT, true);
+
+// An unknown rule must fail loudly rather than be skipped: silently ignoring a
+// filter returns a plausible wrong answer, which is the whole failure mode here.
+checkThrows("unknown rule key throws", [{actionSomethingNewInOmniFocus:true}], mkTask({}));
+checkThrows("unknown aggregate type throws", [{aggregateRules:[{actionIsLeaf:true}], aggregateType:"most"}], mkTask({}));
+
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-perspective-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "perspective rule evaluator failures:\n\(stderr)")
+}

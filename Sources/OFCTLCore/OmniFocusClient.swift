@@ -210,309 +210,7 @@ enum OmniJavaScript {
             throw new Error(`Perspective not found: ${name}`);
           }
 
-          // --- custom perspective rule evaluation ----------------------------------
-          // A custom perspective publishes its filter as declarative JSON through
-          // `archivedFilterRules`. Evaluating that JSON against the database is the
-          // only deterministic way to read a perspective. The alternative — assigning
-          // the perspective to a window and walking `window.content.rootNode` — mutates
-          // the user's front window AND races the outline's render, silently returning
-          // an empty list when the scrape wins. OmniFocus exposes no way to force or
-          // await that render (Window has only selectObjects/forecastDay* and
-          // Window.content has no members at all), so the race cannot be closed.
-          //
-          // Unrecognized rules THROW rather than being skipped: a perspective read that
-          // quietly ignores a filter it does not understand returns a plausible wrong
-          // answer, which is the exact failure mode this function exists to remove.
-
-          // Calendar arithmetic, not fixed millisecond offsets: a month is not 30 days, a
-          // year is not 365, and adding raw ms across a DST boundary shifts the result by
-          // an hour — enough to flip a task whose date sits near midnight.
-          function perspectiveShiftDate(from, component, amount) {
-            const d = new Date(from.getTime());
-            if (component === "day") { d.setDate(d.getDate() + amount); return d; }
-            if (component === "week") { d.setDate(d.getDate() + amount * 7); return d; }
-            if (component === "month") { d.setMonth(d.getMonth() + amount); return d; }
-            if (component === "year") { d.setFullYear(d.getFullYear() + amount); return d; }
-            throw new Error(`Unsupported perspective date component: ${component}`);
-          }
-
-          // {} means "unbounded" — OmniFocus emits an empty spec for a one-sided range.
-          // Callers MUST null-check the result; `date <= null` coerces to `date <= 0` and
-          // silently excludes every task.
-          function perspectiveDateBound(spec) {
-            if (!spec || Object.keys(spec).length === 0) { return null; }
-            if (spec.dynamic === "now") { return new Date(); }
-            if (spec.dynamic === "today") { return startOfDay(new Date()); }
-            if (typeof spec.relativeAfterAmount === "number") {
-              return perspectiveShiftDate(new Date(), spec.relativeComponent, spec.relativeAfterAmount);
-            }
-            if (typeof spec.relativeBeforeAmount === "number") {
-              return perspectiveShiftDate(new Date(), spec.relativeComponent, -spec.relativeBeforeAmount);
-            }
-            throw new Error(`Unsupported perspective date spec: ${JSON.stringify(spec)}`);
-          }
-
-          function perspectiveDateFor(task, field) {
-            if (field === "planned") { return task.effectivePlannedDate; }
-            if (field === "defer") { return task.effectiveDeferDate; }
-            if (field === "due") { return task.effectiveDueDate; }
-            if (field === "completed") { return task.effectiveCompletedDate; }
-            if (field === "added") { return task.added; }
-            if (field === "modified") { return task.modified; }
-            throw new Error(`Unsupported perspective date field: ${field}`);
-          }
-
-          // Task.Status values are mutually exclusive, so "available" is a set of statuses.
-          function perspectiveStatusIsAvailable(status) {
-            return status === Task.Status.Available
-              || status === Task.Status.Next
-              || status === Task.Status.DueSoon
-              || status === Task.Status.Overdue;
-          }
-
-          function perspectiveAvailabilityMatches(task, availability) {
-            if (availability === "remaining") {
-              return !taskEffectivelyCompleted(task) && !taskEffectivelyDropped(task);
-            }
-            if (availability === "completed") { return taskEffectivelyCompleted(task); }
-            if (availability === "dropped") { return taskEffectivelyDropped(task); }
-            if (availability === "available") {
-              return perspectiveStatusIsAvailable(task.taskStatus);
-            }
-            if (availability === "firstAvailable") {
-              // Can't just test Task.Status.Next: Overdue and DueSoon shadow it, so an
-              // action stops reporting Next the moment it comes due. Testing for those
-              // statuses instead would over-match — every overdue task in the database
-              // would qualify, not just the first action of its container. Ask the
-              // question directly: is this the first available task among its siblings?
-              if (!perspectiveStatusIsAvailable(task.taskStatus)) { return false; }
-              const container = task.parent || task.containingProject;
-              if (!container) { return true; }
-              const siblings = container.children.filter(child => child instanceof Task);
-              const first = siblings.find(child => perspectiveStatusIsAvailable(child.taskStatus));
-              return first === undefined || first.id.primaryKey === task.id.primaryKey;
-            }
-            throw new Error(`Unsupported perspective availability: ${availability}`);
-          }
-
-          function perspectiveStatusMatches(task, status) {
-            // effectiveFlagged, not flagged: a task inherits its flag from a flagged
-            // project or action group, and OmniFocus's own filter honors that.
-            if (status === "flagged") { return task.effectiveFlagged; }
-            if (status === "due") {
-              return task.taskStatus === Task.Status.DueSoon || task.taskStatus === Task.Status.Overdue;
-            }
-            throw new Error(`Unsupported perspective action status: ${status}`);
-          }
-
-          // Focus ids may name a folder, a project, or an ancestor action group.
-          function perspectiveWithinFocus(task, ids) {
-            const wanted = new Set(ids);
-            const project = task.containingProject;
-            if (project) {
-              if (wanted.has(project.id.primaryKey)) { return true; }
-              let folder = project.parentFolder;
-              while (folder) {
-                if (wanted.has(folder.id.primaryKey)) { return true; }
-                folder = folder.parent;
-              }
-            }
-            let parent = task.parent;
-            while (parent) {
-              if (wanted.has(parent.id.primaryKey)) { return true; }
-              parent = parent.parent;
-            }
-            return false;
-          }
-
-          function perspectiveProjectStatusMatches(task, wanted) {
-            const project = task.containingProject;
-            if (!project) { return false; }
-            if (wanted === "active") { return project.status === Project.Status.Active; }
-            if (wanted === "onHold") { return project.status === Project.Status.OnHold; }
-            if (wanted === "done") { return project.status === Project.Status.Done; }
-            if (wanted === "dropped") { return project.status === Project.Status.Dropped; }
-            if (wanted === "stalled") {
-              // "stalled" is not a Project.Status — it means active with nothing actionable.
-              if (project.status !== Project.Status.Active) { return false; }
-              return !project.flattenedTasks.some(candidate => {
-                const status = candidate.taskStatus;
-                return status === Task.Status.Available
-                  || status === Task.Status.Next
-                  || status === Task.Status.DueSoon
-                  || status === Task.Status.Overdue;
-              });
-            }
-            throw new Error(`Unsupported perspective project status: ${wanted}`);
-          }
-
-          function perspectiveSearchMatches(task, terms) {
-            const haystack = ((task.name || "") + " " + (task.note || "")).toLowerCase();
-            return terms.every(term => haystack.includes(String(term).toLowerCase()));
-          }
-
-          // OmniFocus tag filters are hierarchical: selecting a parent tag surfaces tasks
-          // carrying any descendant of it. Matching only directly-assigned tags would make
-          // any rule targeting a parent return nothing — and this tag tree is parent-heavy
-          // (Context and Status hold no direct assignments at all, only descendants).
-          const perspectiveTagFamilyCache = new Map();
-
-          function perspectiveTagFamily(id) {
-            const cached = perspectiveTagFamilyCache.get(id);
-            if (cached) { return cached; }
-            const family = new Set([id]);
-            const root = flattenedTags.find(tag => tag.id.primaryKey === id);
-            if (root) {
-              root.flattenedChildren.forEach(child => family.add(child.id.primaryKey));
-            }
-            perspectiveTagFamilyCache.set(id, family);
-            return family;
-          }
-
-          function perspectiveHasTags(task, ids, mode) {
-            const taskTagIds = new Set(task.tags.map(tag => tag.id.primaryKey));
-            const satisfied = id => {
-              const family = perspectiveTagFamily(id);
-              for (const tagId of taskTagIds) {
-                if (family.has(tagId)) { return true; }
-              }
-              return false;
-            };
-            if (mode === "any") { return ids.some(satisfied); }
-            return ids.every(satisfied);
-          }
-
-          function perspectiveTaskIsGroup(task) {
-            return childTasks(task).length > 0;
-          }
-
-          // Every recognized key in a single rule object is ANDed together; OmniFocus
-          // packs `actionDateField` alongside the date predicate it modifies.
-          function perspectiveRuleMatches(task, rule) {
-            // A disabled rule is retained in the JSON but must not constrain anything.
-            if (rule.disabledRule !== undefined) { return true; }
-            if (rule.aggregateRules !== undefined) {
-              return perspectiveRulesMatch(task, rule.aggregateRules, rule.aggregateType);
-            }
-
-            const dateField = rule.actionDateField !== undefined ? rule.actionDateField : "due";
-
-            for (const key of Object.keys(rule)) {
-              const value = rule[key];
-              switch (key) {
-                case "actionDateField":
-                  break;
-                case "actionAvailability":
-                  if (!perspectiveAvailabilityMatches(task, value)) { return false; }
-                  break;
-                case "actionStatus":
-                  if (!perspectiveStatusMatches(task, value)) { return false; }
-                  break;
-                case "actionIsLeaf":
-                  if (perspectiveTaskIsGroup(task) === value) { return false; }
-                  break;
-                case "actionIsProjectOrGroup":
-                  if (perspectiveTaskIsGroup(task) !== value) { return false; }
-                  break;
-                case "actionIsInSingleActionsList": {
-                  // OmniJS spells this `containsSingletonActions`; `singletonActionHolder`
-                  // is the AppleScript name and reads back undefined here, which silently
-                  // made this rule match nothing.
-                  const project = task.containingProject;
-                  const singleton = project !== null && project.containsSingletonActions === true;
-                  if (singleton !== value) { return false; }
-                  break;
-                }
-                case "actionRepeats":
-                  if ((task.repetitionRule !== null) !== value) { return false; }
-                  break;
-                case "actionHasDeferDate":
-                  if ((task.effectiveDeferDate !== null) !== value) { return false; }
-                  break;
-                case "actionHasPlannedDate":
-                  if ((task.effectivePlannedDate !== null) !== value) { return false; }
-                  break;
-                case "actionHasAnyOfTags":
-                  if (!perspectiveHasTags(task, value, "any")) { return false; }
-                  break;
-                case "actionHasAllOfTags":
-                  if (!perspectiveHasTags(task, value, "all")) { return false; }
-                  break;
-                case "actionWithinFocus":
-                  if (!perspectiveWithinFocus(task, value)) { return false; }
-                  break;
-                case "actionHasProjectWithStatus":
-                  if (!perspectiveProjectStatusMatches(task, value)) { return false; }
-                  break;
-                case "actionMatchingSearch":
-                  if (!perspectiveSearchMatches(task, value)) { return false; }
-                  break;
-                case "actionWithinDuration": {
-                  const minutes = task.estimatedMinutes;
-                  if (minutes === null || minutes > value) { return false; }
-                  break;
-                }
-                case "actionDateIsToday": {
-                  const date = perspectiveDateFor(task, dateField);
-                  const today = startOfDay(new Date());
-                  const isToday = date !== null && date >= today && date < addDays(today, 1);
-                  if (isToday !== value) { return false; }
-                  break;
-                }
-                case "actionDateIsInTheNext": {
-                  const date = perspectiveDateFor(task, dateField);
-                  if (date === null) { return false; }
-                  const now = new Date();
-                  const bound = perspectiveDateBound(value);
-                  if (!(date >= now && date <= bound)) { return false; }
-                  break;
-                }
-                case "actionDateIsInThePast": {
-                  const date = perspectiveDateFor(task, dateField);
-                  if (date === null) { return false; }
-                  const now = new Date();
-                  const bound = perspectiveDateBound(value);
-                  if (!(date <= now && date >= bound)) { return false; }
-                  break;
-                }
-                case "actionDateIsBeforeDateSpec": {
-                  const bound = perspectiveDateBound(value);
-                  if (bound === null) { break; }
-                  const date = perspectiveDateFor(task, dateField);
-                  if (date === null || !(date < bound)) { return false; }
-                  break;
-                }
-                case "actionDateIsAfterDateSpec": {
-                  const bound = perspectiveDateBound(value);
-                  if (bound === null) { break; }
-                  const date = perspectiveDateFor(task, dateField);
-                  if (date === null || !(date > bound)) { return false; }
-                  break;
-                }
-                default:
-                  throw new Error(`Unsupported perspective rule: ${key}`);
-              }
-            }
-            return true;
-          }
-
-          function perspectiveRulesMatch(task, allRules, aggregateType) {
-            const type = aggregateType || "all";
-            // A rule the user switched off in the perspective editor is retained in the
-            // JSON wrapped as `disabledRule`. It must be REMOVED from the group, not
-            // treated as true: inside an `any` group an always-true member matches every
-            // task (a disabled rule silently turned "Due Soon" into 447 of 475), and
-            // inside `none` it would exclude everything.
-            const rules = allRules.filter(rule => rule.disabledRule === undefined);
-            if (rules.length === 0) {
-              // An emptied group constrains nothing; `none` of nothing excludes nothing.
-              return true;
-            }
-            if (type === "all") { return rules.every(rule => perspectiveRuleMatches(task, rule)); }
-            if (type === "any") { return rules.some(rule => perspectiveRuleMatches(task, rule)); }
-            if (type === "none") { return !rules.some(rule => perspectiveRuleMatches(task, rule)); }
-            throw new Error(`Unsupported perspective aggregate type: ${type}`);
-          }
+          \(perspectiveRuleSupport)
 
           // Built-ins publish no rules, so they still need the window walk. Guard it so
           // a failed assignment or an unrendered outline is an error, not a silent zero.
@@ -3044,5 +2742,311 @@ function taskEffectivelyCompleted(task) {
 
 function taskEffectivelyDropped(task) {
   return task.effectiveDropDate !== null;
+}
+"""#
+
+private let perspectiveRuleSupport = #"""
+// --- custom perspective rule evaluation ----------------------------------
+// A custom perspective publishes its filter as declarative JSON through
+// `archivedFilterRules`. Evaluating that JSON against the database is the
+// only deterministic way to read a perspective. The alternative — assigning
+// the perspective to a window and walking `window.content.rootNode` — mutates
+// the user's front window AND races the outline's render, silently returning
+// an empty list when the scrape wins. OmniFocus exposes no way to force or
+// await that render (Window has only selectObjects/forecastDay* and
+// Window.content has no members at all), so the race cannot be closed.
+//
+// Unrecognized rules THROW rather than being skipped: a perspective read that
+// quietly ignores a filter it does not understand returns a plausible wrong
+// answer, which is the exact failure mode this function exists to remove.
+
+// Calendar arithmetic, not fixed millisecond offsets: a month is not 30 days, a
+// year is not 365, and adding raw ms across a DST boundary shifts the result by
+// an hour — enough to flip a task whose date sits near midnight.
+function perspectiveShiftDate(from, component, amount) {
+  const d = new Date(from.getTime());
+  if (component === "day") { d.setDate(d.getDate() + amount); return d; }
+  if (component === "week") { d.setDate(d.getDate() + amount * 7); return d; }
+  if (component === "month") { d.setMonth(d.getMonth() + amount); return d; }
+  if (component === "year") { d.setFullYear(d.getFullYear() + amount); return d; }
+  throw new Error(`Unsupported perspective date component: ${component}`);
+}
+
+// {} means "unbounded" — OmniFocus emits an empty spec for a one-sided range.
+// Callers MUST null-check the result; `date <= null` coerces to `date <= 0` and
+// silently excludes every task.
+function perspectiveDateBound(spec) {
+  if (!spec || Object.keys(spec).length === 0) { return null; }
+  if (spec.dynamic === "now") { return new Date(); }
+  if (spec.dynamic === "today") { return startOfDay(new Date()); }
+  if (typeof spec.relativeAfterAmount === "number") {
+    return perspectiveShiftDate(new Date(), spec.relativeComponent, spec.relativeAfterAmount);
+  }
+  if (typeof spec.relativeBeforeAmount === "number") {
+    return perspectiveShiftDate(new Date(), spec.relativeComponent, -spec.relativeBeforeAmount);
+  }
+  throw new Error(`Unsupported perspective date spec: ${JSON.stringify(spec)}`);
+}
+
+function perspectiveDateFor(task, field) {
+  if (field === "planned") { return task.effectivePlannedDate; }
+  if (field === "defer") { return task.effectiveDeferDate; }
+  if (field === "due") { return task.effectiveDueDate; }
+  if (field === "completed") { return task.effectiveCompletedDate; }
+  if (field === "added") { return task.added; }
+  if (field === "modified") { return task.modified; }
+  throw new Error(`Unsupported perspective date field: ${field}`);
+}
+
+// Task.Status values are mutually exclusive, so "available" is a set of statuses.
+function perspectiveStatusIsAvailable(status) {
+  return status === Task.Status.Available
+    || status === Task.Status.Next
+    || status === Task.Status.DueSoon
+    || status === Task.Status.Overdue;
+}
+
+function perspectiveAvailabilityMatches(task, availability) {
+  if (availability === "remaining") {
+    return !taskEffectivelyCompleted(task) && !taskEffectivelyDropped(task);
+  }
+  if (availability === "completed") { return taskEffectivelyCompleted(task); }
+  if (availability === "dropped") { return taskEffectivelyDropped(task); }
+  if (availability === "available") {
+    return perspectiveStatusIsAvailable(task.taskStatus);
+  }
+  if (availability === "firstAvailable") {
+    // Can't just test Task.Status.Next: Overdue and DueSoon shadow it, so an
+    // action stops reporting Next the moment it comes due. Testing for those
+    // statuses instead would over-match — every overdue task in the database
+    // would qualify, not just the first action of its container. Ask the
+    // question directly: is this the first available task among its siblings?
+    if (!perspectiveStatusIsAvailable(task.taskStatus)) { return false; }
+    const container = task.parent || task.containingProject;
+    if (!container) { return true; }
+    const siblings = container.children.filter(child => child instanceof Task);
+    const first = siblings.find(child => perspectiveStatusIsAvailable(child.taskStatus));
+    return first === undefined || first.id.primaryKey === task.id.primaryKey;
+  }
+  throw new Error(`Unsupported perspective availability: ${availability}`);
+}
+
+function perspectiveStatusMatches(task, status) {
+  // effectiveFlagged, not flagged: a task inherits its flag from a flagged
+  // project or action group, and OmniFocus's own filter honors that.
+  if (status === "flagged") { return task.effectiveFlagged; }
+  if (status === "due") {
+    return task.taskStatus === Task.Status.DueSoon || task.taskStatus === Task.Status.Overdue;
+  }
+  throw new Error(`Unsupported perspective action status: ${status}`);
+}
+
+// Focus ids may name a folder, a project, or an ancestor action group.
+function perspectiveWithinFocus(task, ids) {
+  const wanted = new Set(ids);
+  const project = task.containingProject;
+  if (project) {
+    if (wanted.has(project.id.primaryKey)) { return true; }
+    let folder = project.parentFolder;
+    while (folder) {
+      if (wanted.has(folder.id.primaryKey)) { return true; }
+      folder = folder.parent;
+    }
+  }
+  let parent = task.parent;
+  while (parent) {
+    if (wanted.has(parent.id.primaryKey)) { return true; }
+    parent = parent.parent;
+  }
+  return false;
+}
+
+function perspectiveProjectStatusMatches(task, wanted) {
+  const project = task.containingProject;
+  if (!project) { return false; }
+  if (wanted === "active") { return project.status === Project.Status.Active; }
+  if (wanted === "onHold") { return project.status === Project.Status.OnHold; }
+  if (wanted === "done") { return project.status === Project.Status.Done; }
+  if (wanted === "dropped") { return project.status === Project.Status.Dropped; }
+  if (wanted === "stalled") {
+    // "stalled" is not a Project.Status — it means active with nothing actionable.
+    if (project.status !== Project.Status.Active) { return false; }
+    return !project.flattenedTasks.some(candidate => {
+      const status = candidate.taskStatus;
+      return status === Task.Status.Available
+        || status === Task.Status.Next
+        || status === Task.Status.DueSoon
+        || status === Task.Status.Overdue;
+    });
+  }
+  throw new Error(`Unsupported perspective project status: ${wanted}`);
+}
+
+function perspectiveSearchMatches(task, terms) {
+  const haystack = ((task.name || "") + " " + (task.note || "")).toLowerCase();
+  return terms.every(term => haystack.includes(String(term).toLowerCase()));
+}
+
+// OmniFocus tag filters are hierarchical: selecting a parent tag surfaces tasks
+// carrying any descendant of it. Matching only directly-assigned tags would make
+// any rule targeting a parent return nothing — and this tag tree is parent-heavy
+// (Context and Status hold no direct assignments at all, only descendants).
+const perspectiveTagFamilyCache = new Map();
+
+function perspectiveTagFamily(id) {
+  const cached = perspectiveTagFamilyCache.get(id);
+  if (cached) { return cached; }
+  const family = new Set([id]);
+  const root = flattenedTags.find(tag => tag.id.primaryKey === id);
+  if (root) {
+    root.flattenedChildren.forEach(child => family.add(child.id.primaryKey));
+  }
+  perspectiveTagFamilyCache.set(id, family);
+  return family;
+}
+
+function perspectiveHasTags(task, ids, mode) {
+  const taskTagIds = new Set(task.tags.map(tag => tag.id.primaryKey));
+  const satisfied = id => {
+    const family = perspectiveTagFamily(id);
+    for (const tagId of taskTagIds) {
+      if (family.has(tagId)) { return true; }
+    }
+    return false;
+  };
+  if (mode === "any") { return ids.some(satisfied); }
+  return ids.every(satisfied);
+}
+
+function perspectiveTaskIsGroup(task) {
+  return childTasks(task).length > 0;
+}
+
+// Every recognized key in a single rule object is ANDed together; OmniFocus
+// packs `actionDateField` alongside the date predicate it modifies.
+function perspectiveRuleMatches(task, rule) {
+  // A disabled rule is retained in the JSON but must not constrain anything.
+  if (rule.disabledRule !== undefined) { return true; }
+  if (rule.aggregateRules !== undefined) {
+    return perspectiveRulesMatch(task, rule.aggregateRules, rule.aggregateType);
+  }
+
+  const dateField = rule.actionDateField !== undefined ? rule.actionDateField : "due";
+
+  for (const key of Object.keys(rule)) {
+    const value = rule[key];
+    switch (key) {
+      case "actionDateField":
+        break;
+      case "actionAvailability":
+        if (!perspectiveAvailabilityMatches(task, value)) { return false; }
+        break;
+      case "actionStatus":
+        if (!perspectiveStatusMatches(task, value)) { return false; }
+        break;
+      case "actionIsLeaf":
+        if (perspectiveTaskIsGroup(task) === value) { return false; }
+        break;
+      case "actionIsProjectOrGroup":
+        if (perspectiveTaskIsGroup(task) !== value) { return false; }
+        break;
+      case "actionIsInSingleActionsList": {
+        // OmniJS spells this `containsSingletonActions`; `singletonActionHolder`
+        // is the AppleScript name and reads back undefined here, which silently
+        // made this rule match nothing.
+        const project = task.containingProject;
+        const singleton = project !== null && project.containsSingletonActions === true;
+        if (singleton !== value) { return false; }
+        break;
+      }
+      case "actionRepeats":
+        if ((task.repetitionRule !== null) !== value) { return false; }
+        break;
+      case "actionHasDeferDate":
+        if ((task.effectiveDeferDate !== null) !== value) { return false; }
+        break;
+      case "actionHasPlannedDate":
+        if ((task.effectivePlannedDate !== null) !== value) { return false; }
+        break;
+      case "actionHasAnyOfTags":
+        if (!perspectiveHasTags(task, value, "any")) { return false; }
+        break;
+      case "actionHasAllOfTags":
+        if (!perspectiveHasTags(task, value, "all")) { return false; }
+        break;
+      case "actionWithinFocus":
+        if (!perspectiveWithinFocus(task, value)) { return false; }
+        break;
+      case "actionHasProjectWithStatus":
+        if (!perspectiveProjectStatusMatches(task, value)) { return false; }
+        break;
+      case "actionMatchingSearch":
+        if (!perspectiveSearchMatches(task, value)) { return false; }
+        break;
+      case "actionWithinDuration": {
+        const minutes = task.estimatedMinutes;
+        if (minutes === null || minutes > value) { return false; }
+        break;
+      }
+      case "actionDateIsToday": {
+        const date = perspectiveDateFor(task, dateField);
+        const today = startOfDay(new Date());
+        const isToday = date !== null && date >= today && date < addDays(today, 1);
+        if (isToday !== value) { return false; }
+        break;
+      }
+      case "actionDateIsInTheNext": {
+        const date = perspectiveDateFor(task, dateField);
+        if (date === null) { return false; }
+        const now = new Date();
+        const bound = perspectiveDateBound(value);
+        if (!(date >= now && date <= bound)) { return false; }
+        break;
+      }
+      case "actionDateIsInThePast": {
+        const date = perspectiveDateFor(task, dateField);
+        if (date === null) { return false; }
+        const now = new Date();
+        const bound = perspectiveDateBound(value);
+        if (!(date <= now && date >= bound)) { return false; }
+        break;
+      }
+      case "actionDateIsBeforeDateSpec": {
+        const bound = perspectiveDateBound(value);
+        if (bound === null) { break; }
+        const date = perspectiveDateFor(task, dateField);
+        if (date === null || !(date < bound)) { return false; }
+        break;
+      }
+      case "actionDateIsAfterDateSpec": {
+        const bound = perspectiveDateBound(value);
+        if (bound === null) { break; }
+        const date = perspectiveDateFor(task, dateField);
+        if (date === null || !(date > bound)) { return false; }
+        break;
+      }
+      default:
+        throw new Error(`Unsupported perspective rule: ${key}`);
+    }
+  }
+  return true;
+}
+
+function perspectiveRulesMatch(task, allRules, aggregateType) {
+  const type = aggregateType || "all";
+  // A rule the user switched off in the perspective editor is retained in the
+  // JSON wrapped as `disabledRule`. It must be REMOVED from the group, not
+  // treated as true: inside an `any` group an always-true member matches every
+  // task (a disabled rule silently turned "Due Soon" into 447 of 475), and
+  // inside `none` it would exclude everything.
+  const rules = allRules.filter(rule => rule.disabledRule === undefined);
+  if (rules.length === 0) {
+    // An emptied group constrains nothing; `none` of nothing excludes nothing.
+    return true;
+  }
+  if (type === "all") { return rules.every(rule => perspectiveRuleMatches(task, rule)); }
+  if (type === "any") { return rules.some(rule => perspectiveRuleMatches(task, rule)); }
+  if (type === "none") { return !rules.some(rule => perspectiveRuleMatches(task, rule)); }
+  throw new Error(`Unsupported perspective aggregate type: ${type}`);
 }
 """#
