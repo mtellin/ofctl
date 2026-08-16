@@ -371,8 +371,11 @@ enum OmniJavaScript {
                   if (perspectiveTaskIsGroup(task) !== value) { return false; }
                   break;
                 case "actionIsInSingleActionsList": {
+                  // OmniJS spells this `containsSingletonActions`; `singletonActionHolder`
+                  // is the AppleScript name and reads back undefined here, which silently
+                  // made this rule match nothing.
                   const project = task.containingProject;
-                  const singleton = project !== null && project.singletonActionHolder === true;
+                  const singleton = project !== null && project.containsSingletonActions === true;
                   if (singleton !== value) { return false; }
                   break;
                 }
