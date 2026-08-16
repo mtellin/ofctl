@@ -2062,7 +2062,10 @@ enum OmniJavaScript {
           };
 
           const parts = tagPathParts(input.tag);
-          const tag = tagNamedByPath(parts);
+          // Fall back to an identifier lookup: duplicate tag names under one parent
+          // produce an ambiguous path, and the id is then the only way to name the
+          // specific tag to delete.
+          const tag = tagNamedByPath(parts) || flattenedTags.find(t => t.id.primaryKey === input.tag);
           if (!tag) {
             throw new Error(`Tag not found: ${input.tag}`);
           }
@@ -2072,7 +2075,10 @@ enum OmniJavaScript {
             name: tag.name,
             path: tagPath(tag),
             childCount: tag.tags.length,
-            taskCount: tag.flattenedTasks.length
+            // Tag has no `flattenedTasks` in OmniJS — reading it threw a TypeError and
+            // made tag-delete unusable, dry-run included.
+            taskCount: tag.tasks.length,
+            remainingTaskCount: tag.remainingTasks.length
           };
 
           if (input.dryRun) {
