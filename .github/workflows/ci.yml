@@ -7,8 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test-and-build:
@@ -17,7 +15,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Show Swift version
         run: swift --version
@@ -34,7 +32,7 @@ jobs:
           cp .build/release/ofctl artifacts/ofctl-macos
 
       - name: Upload release binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ofctl-macos
           path: artifacts/ofctl-macos
