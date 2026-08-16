@@ -452,8 +452,18 @@ enum OmniJavaScript {
             return true;
           }
 
-          function perspectiveRulesMatch(task, rules, aggregateType) {
+          function perspectiveRulesMatch(task, allRules, aggregateType) {
             const type = aggregateType || "all";
+            // A rule the user switched off in the perspective editor is retained in the
+            // JSON wrapped as `disabledRule`. It must be REMOVED from the group, not
+            // treated as true: inside an `any` group an always-true member matches every
+            // task (a disabled rule silently turned "Due Soon" into 447 of 475), and
+            // inside `none` it would exclude everything.
+            const rules = allRules.filter(rule => rule.disabledRule === undefined);
+            if (rules.length === 0) {
+              // An emptied group constrains nothing; `none` of nothing excludes nothing.
+              return true;
+            }
             if (type === "all") { return rules.every(rule => perspectiveRuleMatches(task, rule)); }
             if (type === "any") { return rules.some(rule => perspectiveRuleMatches(task, rule)); }
             if (type === "none") { return !rules.some(rule => perspectiveRuleMatches(task, rule)); }
