@@ -1003,7 +1003,7 @@ ofctl projects --folder Home --include-notes --format text
 Sets a project's review interval and/or marks it as reviewed.
 
 ```sh
-ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC] [--dry-run]
+ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC] [--next-review DATE] [--dry-run]
 ```
 
 Interval spec format: `<N><unit>` where unit is `d` (days), `w` (weeks),
@@ -1027,6 +1027,19 @@ Set interval and mark reviewed together:
 ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w --dry-run
 ofctl project-review "Home Maintenance" --mark-reviewed --interval 2w
 ```
+
+Pin the next review date explicitly, instead of deriving it from the interval:
+
+```sh
+ofctl project-review "Home Maintenance" --mark-reviewed --next-review 2026-09-15
+```
+
+`--next-review` accepts the same DATE forms as every other date flag: `YYYY-MM-DD`,
+the relative keywords `now`/`today`/`tomorrow`/`yesterday`, or any string JavaScript's
+`Date` can parse. An unparseable or out-of-range date (`2026-02-30`) is rejected with
+an error rather than silently rolled over to a neighbouring day. It is applied last, so it overrides the date `--mark-reviewed`
+or `--interval` would otherwise derive; the review interval itself is untouched,
+so the review *after* that one falls back to the normal cadence.
 
 **A review interval cannot be cleared.** OmniFocus requires every project to have
 one, so `--interval none` is rejected with an explanatory error. To make a project

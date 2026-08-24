@@ -1278,6 +1278,68 @@ import Testing
     ))))
 }
 
+@Test func parsesProjectReviewNextReview() throws {
+    let options = try CLI.parse([
+        "ofctl", "project-review", "Home Maintenance",
+        "--mark-reviewed",
+        "--next-review", "2026-09-15",
+    ])
+    #expect(options == CommandLineOptions(command: .projectReview(UpdateProjectReview(
+        project: "Home Maintenance",
+        markReviewed: true,
+        interval: nil,
+        nextReview: "2026-09-15",
+        dryRun: false
+    ))))
+}
+
+/// An explicit `--next-review` must be assigned AFTER `--mark-reviewed`: setting
+/// lastReviewDate recomputes nextReviewDate from the interval, so an earlier
+/// assignment would be silently overwritten.
+@Test func projectReviewNextReviewOverridesDerivedDate() throws {
+    let script = try OmniJavaScript.updateProjectReview(
+        UpdateProjectReview(
+            project: "Home Maintenance",
+            markReviewed: true,
+            interval: nil,
+            nextReview: "2026-09-15",
+            dryRun: false
+        ),
+        privacyScope: .unrestricted
+    )
+
+    // Input-dependent: the date must actually reach the script.
+    #expect(script.contains("nextReview: \"2026-09-15\""))
+    #expect(script.contains("project.nextReviewDate = parsedNextReview"))
+
+    let markIndex = try #require(script.range(of: "project.lastReviewDate = new Date()"))
+    let assignIndex = try #require(script.range(of: "project.nextReviewDate = parsedNextReview"))
+    #expect(markIndex.lowerBound < assignIndex.lowerBound)
+
+    // Parsed before the dry-run return, so a preview rejects the dates a real run would.
+    let parseIndex = try #require(script.range(of: "const parsedNextReview"))
+    let dryRunIndex = try #require(script.range(of: "if (input.dryRun)"))
+    #expect(parseIndex.lowerBound < dryRunIndex.lowerBound)
+
+    // Out-of-range dates must be rejected, not rolled over: `new Date(2026, 1, 30)` is
+    // Mar 2, and 2026-00-10 is Dec 10 2025 — writing a PAST date the caller never asked
+    // for and silently dropping the project into the due-for-review queue.
+    #expect(script.contains("date.getFullYear() !== year"))
+    #expect(script.contains("date.getDate() !== day"))
+    // Empty string must fail loudly rather than no-op with a success-shaped payload.
+    #expect(script.contains("if (value === null) { return null; }"))
+    #expect(!script.contains("function parseDate(value) {\n            if (!value) { return null; }"))
+    // --dry-run must surface the resolved date, or a preview hides a bad one.
+    #expect(script.contains("nextReview: parsedNextReview ? parsedNextReview.toISOString() : null"))
+
+    // Omitting the flag must leave nextReviewDate alone.
+    let withoutScript = try OmniJavaScript.updateProjectReview(
+        UpdateProjectReview(project: "Home Maintenance", markReviewed: true, interval: nil, dryRun: false),
+        privacyScope: .unrestricted
+    )
+    #expect(withoutScript.contains("nextReview: null"))
+}
+
 @Test func workPrivacyScopeGuardsProjectsAndReview() throws {
     let projectsScript = try OmniJavaScript.projectsQuery(
         ProjectsQuery(folder: nil, status: nil, dueForReview: false, limit: 100, format: .json),

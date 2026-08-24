@@ -1548,6 +1548,7 @@ enum OmniJavaScript {
     static func updateProjectReview(_ review: UpdateProjectReview, privacyScope: PrivacyScope = .unrestricted) throws -> String {
         let project = try jsonLiteral(review.project)
         let interval = optionalJSONAssignment(review.interval)
+        let nextReview = try jsonLiteral(review.nextReview)
         let privacy = try privacyPrelude(privacyScope)
 
         return """
@@ -1560,8 +1561,39 @@ enum OmniJavaScript {
             project: \(project),
             markReviewed: \(review.markReviewed ? "true" : "false"),
             interval: \(interval),
+            nextReview: \(nextReview),
             dryRun: \(review.dryRun ? "true" : "false")
           };
+
+          // Deliberately stricter than the parseDate copies used by add-task/update-task:
+          // an empty string and an out-of-range date must fail loudly here rather than
+          // silently no-op or silently write a date the caller never asked for.
+          function parseDate(value) {
+            if (value === null) { return null; }
+            const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+            if (value === "now") { return new Date(); }
+            if (value === "today") { return midnight(); }
+            if (value === "tomorrow") { const d = midnight(); d.setDate(d.getDate() + 1); return d; }
+            if (value === "yesterday") { const d = midnight(); d.setDate(d.getDate() - 1); return d; }
+            const ymd = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+            if (ymd) {
+              const [year, month, day] = [Number(ymd[1]), Number(ymd[2]), Number(ymd[3])];
+              const date = new Date(year, month - 1, day);
+              // new Date() rolls out-of-range components over without complaint: 2026-02-30
+              // becomes Mar 2 and 2026-00-10 becomes Dec 10 2025 — a date in the PAST, which
+              // would quietly drop the project into the due-for-review queue. Round-trip the
+              // components so a bad date is rejected instead of silently rewritten.
+              if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+                throw new Error(`Invalid date: ${value}`);
+              }
+              return date;
+            }
+            const date = new Date(value);
+            if (Number.isNaN(date.valueOf())) {
+              throw new Error(`Invalid date: ${value}`);
+            }
+            return date;
+          }
 
           // Validate the interval spec WITHOUT touching the database, so `--dry-run`
           // rejects exactly what a real run would. Returns {steps, unit} or throws.
@@ -1613,19 +1645,21 @@ enum OmniJavaScript {
           // would. docs/claude-integration.md tells callers to dry-run first; a green
           // preview followed by a hard failure would make that advice actively misleading.
           const parsedInterval = input.interval !== undefined ? parseIntervalSpec(input.interval) : null;
+          const parsedNextReview = parseDate(input.nextReview);
 
           // A never-reviewed project has no lastReviewDate to derive nextReviewDate from,
           // so changing its interval cannot move it into the review queue. Report that
-          // rather than letting the caller assume the new cadence took effect.
-          const willRecomputeNextReview = parsedInterval === null
-            ? null
-            : Boolean(input.markReviewed || project.lastReviewDate);
+          // rather than letting the caller assume the new cadence took effect. An explicit
+          // --next-review sidesteps that entirely: it is assigned outright, so it always lands.
+          const willRecomputeNextReview = parsedNextReview
+            ? true
+            : (parsedInterval === null ? null : Boolean(input.markReviewed || project.lastReviewDate));
 
           if (input.dryRun) {
             return JSON.stringify({
               dryRun: true,
               project: serializeProject(project),
-              meta: { privacyScope, interval: parsedInterval, nextReviewDateRecomputed: willRecomputeNextReview }
+              meta: { privacyScope, interval: parsedInterval, nextReview: parsedNextReview ? parsedNextReview.toISOString() : null, nextReviewDateRecomputed: willRecomputeNextReview }
             }, null, 2);
           }
 
@@ -1644,6 +1678,11 @@ enum OmniJavaScript {
             // OmniFocus has no project.markReviewed() method; setting lastReviewDate to now
             // recomputes nextReviewDate from the review interval, which is what "mark reviewed" means.
             project.lastReviewDate = new Date();
+          }
+          // Assigned last: --mark-reviewed and --interval both recompute nextReviewDate from
+          // the interval, and an explicit date is meant to override that derived value.
+          if (parsedNextReview) {
+            project.nextReviewDate = parsedNextReview;
           }
 
           return JSON.stringify({

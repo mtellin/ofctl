@@ -294,6 +294,7 @@ public struct UpdateProjectReview: Equatable {
     public var project: String
     public var markReviewed: Bool
     public var interval: String??
+    public var nextReview: String? = nil
     public var dryRun: Bool
 }
 
@@ -393,7 +394,7 @@ public enum CLI {
       ofctl task-delete TASK_ID [TASK_ID ...] [--dry-run]
       ofctl project-delete PROJECT_NAME [--dry-run]
       ofctl projects [--folder NAME] [--status active|on-hold|completed|dropped] [--due-for-review] [--limit COUNT|--all] [--include-notes] [--format json|text]
-      ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC] [--dry-run]
+      ofctl project-review PROJECT_NAME [--mark-reviewed] [--interval SPEC] [--next-review DATE] [--dry-run]
       ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
       ofctl project-state PROJECT_NAME (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
 
@@ -1185,6 +1186,7 @@ public enum CLI {
 
         var markReviewed = false
         var interval: String??
+        var nextReview: String?
         var dryRun = false
 
         while let arg = parser.next() {
@@ -1193,6 +1195,8 @@ public enum CLI {
                 markReviewed = true
             case "--interval":
                 interval = .some(try nullableValue(after: arg, parser: &parser))
+            case "--next-review":
+                nextReview = try parser.value(after: arg)
             case "--dry-run":
                 dryRun = true
             default:
@@ -1200,7 +1204,7 @@ public enum CLI {
             }
         }
 
-        return UpdateProjectReview(project: project, markReviewed: markReviewed, interval: interval, dryRun: dryRun)
+        return UpdateProjectReview(project: project, markReviewed: markReviewed, interval: interval, nextReview: nextReview, dryRun: dryRun)
     }
 
     private static func parseStateMutation(_ args: [String], command: String) throws -> StateMutation {

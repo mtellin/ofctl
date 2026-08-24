@@ -238,6 +238,7 @@ ofctl project-completion "Product Launch" --complete-with-last-action --dry-run
 ofctl project-review "Work Notifications" --interval 1w
 ofctl project-review "Work Notifications" --mark-reviewed
 ofctl project-review "Work Notifications" --mark-reviewed --interval 2w --dry-run
+ofctl project-review "Work Notifications" --mark-reviewed --next-review 2026-09-15
 ```
 
 Delete tasks and projects (always dry-run first):
@@ -313,6 +314,8 @@ specific twin unambiguously.
 - `ofctl project-review`: set a project's review interval and/or mark it as
   reviewed. Interval spec: `<N><d|w|m|y>` (e.g. `1w`, `2m`). An interval cannot be
   cleared — OmniFocus requires one on every project; use a long one like `1y`.
+  `--next-review DATE` pins the next review date outright instead of deriving it
+  from the interval.
 
 Tags can be passed as leaf names or slash-delimited paths such as
 `People/Alex Rivera` and `Status/Work 💼`. Missing path segments are created
