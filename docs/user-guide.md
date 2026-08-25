@@ -1037,9 +1037,22 @@ ofctl project-review "Home Maintenance" --mark-reviewed --next-review 2026-09-15
 `--next-review` accepts the same DATE forms as every other date flag: `YYYY-MM-DD`,
 the relative keywords `now`/`today`/`tomorrow`/`yesterday`, or any string JavaScript's
 `Date` can parse. An unparseable or out-of-range date (`2026-02-30`) is rejected with
-an error rather than silently rolled over to a neighbouring day. It is applied last, so it overrides the date `--mark-reviewed`
-or `--interval` would otherwise derive; the review interval itself is untouched,
-so the review *after* that one falls back to the normal cadence.
+an error rather than silently rolled over to a neighbouring day.
+
+It is applied last, so it overrides the date `--mark-reviewed` or `--interval` would
+otherwise derive. Two consequences are worth knowing before you rely on it — both
+verified against a live database:
+
+- **A pin is a one-shot override, not a new anchor.** The review interval is left
+  alone, so the review *after* the pinned one is derived from **when you actually
+  mark the project reviewed** — not from the pinned date. Pin `2026-12-01` on a
+  2-week interval and then mark it reviewed on `2026-12-20`, and the following
+  review lands on `2027-01-03`, not `2026-12-15`.
+- **A pinned date survives a later `--interval` change.** Once `nextReviewDate` has
+  been assigned explicitly, OmniFocus stops re-deriving it from the same-value
+  `lastReviewDate` write that `--interval` uses to force a recompute (see the API
+  note below). Only a real `--mark-reviewed` clears the pin. This is the one case
+  where `--interval` changes the cadence without moving `nextReviewDate`.
 
 **A review interval cannot be cleared.** OmniFocus requires every project to have
 one, so `--interval none` is rejected with an explanatory error. To make a project
@@ -1061,7 +1074,10 @@ it a starting point.
 > from. `nextReviewDate` is only recalculated when `lastReviewDate` is assigned;
 > changing the interval alone would leave a stale next-review date, so `--interval`
 > re-assigns the existing `lastReviewDate` to force the recompute without inventing
-> a review that did not happen. Review intervals also cannot be *constructed* in
+> a review that did not happen. That force-recompute does **not** apply to a project
+> whose `nextReviewDate` was pinned with `--next-review`: an explicitly assigned
+> next-review date stops OmniFocus re-deriving one from a same-value `lastReviewDate`
+> write, so the pin outlives an interval change. Review intervals also cannot be *constructed* in
 > OmniJS: ofctl mutates the project's own existing interval instance and assigns it
 > back. A project with no interval at all is therefore an error rather than a
 > borrow from some other project — silently rewriting an unrelated project's

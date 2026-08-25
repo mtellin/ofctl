@@ -1681,6 +1681,12 @@ enum OmniJavaScript {
           }
           // Assigned last: --mark-reviewed and --interval both recompute nextReviewDate from
           // the interval, and an explicit date is meant to override that derived value.
+          //
+          // Verified against a live database: an explicitly assigned nextReviewDate is sticky.
+          // OmniFocus stops re-deriving it from the same-value lastReviewDate write that the
+          // --interval branch above uses, so a pin outlives a later interval change. Only a
+          // genuine lastReviewDate change (--mark-reviewed) recomputes over it -- which also
+          // means a pin is a one-shot override, never a new cadence anchor.
           if (parsedNextReview) {
             project.nextReviewDate = parsedNextReview;
           }
