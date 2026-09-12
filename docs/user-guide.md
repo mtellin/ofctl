@@ -682,8 +682,32 @@ ofctl update TASK_ID --clear-tags --tag "Alex Rivera"
 Update notes:
 
 ```sh
+ofctl update TASK_ID --note "Run vinegar through the unit, then rinse."
 ofctl update TASK_ID --note-file /tmp/of-note.md
 ```
+
+`--note` / `--note-file` writes the **freeform note**. A trailing
+`=== ofctl-state ===` block (see
+[Note State Block](#note-state-block-task-state--project-state)) is preserved —
+only the region above it is replaced, so writing prose can no longer destroy a
+task's state.
+
+To overwrite the whole note, block included, pass `--note-replace-all`:
+
+```sh
+ofctl update TASK_ID --note-file /tmp/of-note.md --note-replace-all
+```
+
+That is the flag for a caller that composes the entire note itself, and it is the
+only way to *remove* a state block through `update` (`task-state --clear` is the
+direct equivalent). A payload that already ends in a well-formed block — a marker
+line followed only by `key: value` lines — is treated as such a whole-note write
+even without the flag, so an older client keeps working. Prose that merely mentions
+the sentinel does not qualify and cannot hijack the block.
+
+Two clearing notes: `update` has no `--note none` (unlike `project-note`), so
+`--note none` writes the literal string `none`; and `--note ""` clears the freeform
+region while leaving the state block in place.
 
 Set action group ordering or completion behavior:
 

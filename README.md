@@ -275,7 +275,9 @@ ofctl project-delete "Home Maintenance"
   `--folder` to create/target the project in a folder), tags, dates, repeat rule,
   duration, notes, completion state, dropped state, flag state, action group
   settings, skipped repeating occurrences, and optional `--no-create-project`
-  protection when moving to a project.
+  protection when moving to a project. `--note`/`--note-file` writes the freeform
+  note and preserves any trailing `=== ofctl-state ===` block; `--note-replace-all`
+  overwrites the whole note including that block.
 - `ofctl task-rename`: rename one task by ID using OmniFocus's native task
   name property.
 - `ofctl task-move`: reorder one or more tasks before/after another task, or

@@ -31,7 +31,7 @@ The command surface is intentionally narrow:
 - `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes
 - `project-rename PROJECT_NAME --to NEW_NAME` for native project renames
-- `project-note PROJECT_NAME_OR_ID` to set (`--note TEXT` / `--note-file PATH`), prepend (`--prepend TEXT`), or clear (`--note none`) a project's freeform note; accepts a project name or id, and preserves any trailing `=== ofctl-state ===` block (unlike task `--note`, which replaces the whole note). Use `--prepend` to add a reference link (e.g. an `obsidian://` deep link) to the top of a project that maps 1:1 to an external note
+- `project-note PROJECT_NAME_OR_ID` to set (`--note TEXT` / `--note-file PATH`), prepend (`--prepend TEXT`), or clear (`--note none`) a project's freeform note; accepts a project name or id, and preserves any trailing `=== ofctl-state ===` block (as task `update --note` also does). Use `--prepend` to add a reference link (e.g. an `obsidian://` deep link) to the top of a project that maps 1:1 to an external note
 - `project-completion PROJECT_NAME --complete-with-last-action|--no-complete-with-last-action` for the project "Complete with last action" flag on parallel/sequential projects
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
@@ -272,8 +272,8 @@ ofctl project-status "$PROJECT_NAME" --status on-hold --dry-run
 ```
 
 Read or merge the note state block (persists structured state in the note so it
-syncs across machines; never use `update --note` for this — that replaces the
-whole note):
+syncs across machines; use these rather than hand-composing a block and writing it
+with `update --note --note-replace-all`, which overwrites rather than merges):
 
 ```sh
 ofctl task-state "$TASK_ID" --get

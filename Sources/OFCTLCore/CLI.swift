@@ -149,6 +149,10 @@ public struct UpdateTask: Equatable {
     public var repeatMethod: RepeatMethod?
     public var estimatedMinutes: Int??
     public var note: String?
+    /// Write `note` to the whole note field verbatim, including any
+    /// `=== ofctl-state ===` block. Without it a note write replaces only the
+    /// freeform region and preserves the existing block.
+    public var noteReplaceAll: Bool = false
     public var sequential: Bool?
     public var completedByChildren: Bool?
     public var complete: Bool
@@ -376,7 +380,7 @@ public enum CLI {
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
       ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run] [--format json|text]
       ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run] [--format json|text]
-      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
+      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--note-replace-all] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
       ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
@@ -402,6 +406,9 @@ public enum CLI {
       task-state and project-state read or merge a delimited "=== ofctl-state ===" block at the end of
       a note (key: value lines) without disturbing the freeform note content above it. Use --get to
       read the parsed block, --set/--increment/--clear-key to merge, and --clear to remove the block.
+      update --note/--note-file and project-note write the freeform region only and preserve that
+      block; pass --note-replace-all to overwrite the whole note including the block. Text that
+      already ends in a well-formed block is also taken as a whole-note write.
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -786,6 +793,8 @@ public enum CLI {
                 task.note = try parser.value(after: arg)
             case "--note-file":
                 task.note = try readNoteFile(try parser.value(after: arg))
+            case "--note-replace-all":
+                task.noteReplaceAll = true
             case "--sequential":
                 task.sequential = true
             case "--parallel":

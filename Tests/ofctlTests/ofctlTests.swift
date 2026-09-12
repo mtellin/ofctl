@@ -1956,6 +1956,178 @@ console.log("ok");
     #expect(proc.terminationStatus == 0, "note round trip not idempotent:\n\(stderr)")
 }
 
+// Regression: `ofctl update --note` used to overwrite the whole note field, which
+// silently destroyed the trailing "=== ofctl-state ===" block that task-state and
+// the gtd state engine keep there. Prose writes must now preserve that block, while
+// a caller that composes the whole note itself (state engine) still writes verbatim.
+@Test func noteWritesPreserveTheStateBlockUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let repoRoot = thisFile
+        .deletingLastPathComponent()   // ofctlTests/
+        .deletingLastPathComponent()   // Tests/
+        .deletingLastPathComponent()   // repo root
+    let source = repoRoot.appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+
+    let text = try String(contentsOf: source, encoding: .utf8)
+    let lines = text.components(separatedBy: "\n")
+    func extract(_ name: String) throws -> String {
+        guard let open = lines.firstIndex(where: { $0.contains("private let \(name) = #\"\"\"") }) else {
+            throw ExtractionError.missing(name)
+        }
+        var close = -1
+        for i in (open + 1)..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "\"\"\"#" {
+            close = i
+            break
+        }
+        guard close > open else { throw ExtractionError.unterminated(name) }
+        return lines[(open + 1)..<close].joined(separator: "\n")
+    }
+
+    // projectNoteSupport depends on noteTextToMarkdown; stub it in the harness.
+    let js = try extract("stateBlockSupport") + "\n" + (try extract("projectNoteSupport"))
+
+    let harness = #"""
+
+// projectNoteSupport reads through this converter; in OmniFocus it turns rich
+// text into Markdown, and for these plain-string fixtures it is the identity.
+function noteTextToMarkdown(text) { return text; }
+
+const BLOCK = "=== ofctl-state ===\nlast-touched: 2026-09-12T08:00\nslips: 3";
+const withBlock = "Run vinegar through the unit.\n\n" + BLOCK;
+const fails = [];
+const eq = (label, got, want) => {
+  if (got !== want) fails.push(label + "\n  got:  " + JSON.stringify(got) + "\n  want: " + JSON.stringify(want));
+};
+
+// Prose write onto a stateful note: freeform replaced, block re-emitted verbatim.
+eq("prose keeps the block",
+   noteWithPreservedState(withBlock, "Soak the tips in vinegar for 5 minutes."),
+   "Soak the tips in vinegar for 5 minutes.\n\n" + BLOCK);
+
+// Key ORDER and values must survive, not just the marker.
+const out = noteWithPreservedState(withBlock, "new prose");
+eq("block round-trips byte for byte", out.slice(out.indexOf("=== ofctl-state ===")), BLOCK);
+
+// Emptying the prose must not take the block with it.
+eq("empty prose keeps the block", noteWithPreservedState(withBlock, ""), BLOCK);
+
+// A note with no block behaves exactly as before: plain replace.
+eq("stateless note is a plain replace", noteWithPreservedState("old prose", "new prose"), "new prose");
+eq("stateless empty write clears", noteWithPreservedState("old prose", ""), "");
+
+// The state engine composes the whole note itself; that write stays verbatim and
+// must not end up with two blocks.
+const composed = "prose\n\n" + BLOCK;
+eq("composed whole-note write is verbatim", noteWithPreservedState(withBlock, composed), composed);
+const twice = noteWithPreservedState(withBlock, composed);
+if ((twice.match(/=== ofctl-state ===/g) || []).length !== 1) fails.push("whole-note write produced a duplicate block");
+
+// Writing prose is idempotent - re-running must not stack blocks or drift.
+const a = noteWithPreservedState(withBlock, "p");
+const b = noteWithPreservedState(a, "p");
+eq("prose write is idempotent", a, b);
+
+// Trailing whitespace in prose must not push the block around.
+eq("trailing whitespace is trimmed",
+   noteWithPreservedState(withBlock, "prose   \n\n\n"),
+   "prose\n\n" + BLOCK);
+
+// Review finding: prose that merely MENTIONS the sentinel (documentation, a
+// pasted note about the convention) must not be mistaken for a real block and
+// must not hijack or destroy the task's state.
+const proseAboutTheBlock =
+  "How state works:\n=== ofctl-state ===\nthis line is narrative, not a key/value pair";
+eq("prose mentioning the sentinel keeps the real block",
+   noteWithPreservedState(withBlock, proseAboutTheBlock),
+   proseAboutTheBlock + "\n\n" + BLOCK);
+if (hasWellFormedStateBlock(proseAboutTheBlock)) fails.push("narrative text accepted as a state block");
+if (!hasWellFormedStateBlock(BLOCK)) fails.push("a real block was rejected");
+if (hasWellFormedStateBlock("=== ofctl-state ===\n")) fails.push("a keyless marker was accepted as a block");
+
+// Review finding (HIGH): the project-note guard must never swallow --prepend.
+// Prepending marker-bearing text must still prepend, never replace the note.
+const proj = { noteText: "Existing project prose.\n\n=== ofctl-state ===\nslips: 7" };
+const prependedRaw = applyProjectNoteEdit(proj, "prepend", "Reminder:\n=== ofctl-state ===\nkey: value");
+if (prependedRaw.indexOf("Existing project prose.") === -1) fails.push("prepend dropped the existing project prose");
+if (prependedRaw.indexOf("slips: 7") === -1) fails.push("prepend dropped the existing project state");
+
+// Ordinary prepend is unaffected.
+eq("ordinary prepend still prepends",
+   applyProjectNoteEdit(proj, "prepend", "A reference link"),
+   "A reference link\n\nExisting project prose.\n\n=== ofctl-state ===\nslips: 7");
+
+// set with a well-formed whole note is still taken verbatim; clear still clears.
+const composedProject = "fresh prose\n\n=== ofctl-state ===\nslips: 1";
+eq("project set with a composed note is verbatim",
+   applyProjectNoteEdit(proj, "set", composedProject), composedProject);
+eq("project clear empties the freeform but keeps state",
+   applyProjectNoteEdit(proj, "clear", ""), "=== ofctl-state ===\nslips: 7");
+
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-stateblock-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "note write did not preserve the state block:\n\(stderr)")
+}
+
+@Test func updateTaskScriptPreservesTheStateBlockOnNoteWrites() throws {
+    var update = defaultUpdateTask()
+    update.note = "some prose"
+
+    let script = try OmniJavaScript.updateTask(update)
+
+    #expect(script.contains("input.noteReplaceAll ? input.note : noteWithPreservedState(noteTextToMarkdown(task.noteText), input.note)"))
+    #expect(script.contains("function noteWithPreservedState"))
+    #expect(script.contains("noteReplaceAll: false"))
+
+    var raw = defaultUpdateTask()
+    raw.note = "whole note"
+    raw.noteReplaceAll = true
+    #expect(try OmniJavaScript.updateTask(raw).contains("noteReplaceAll: true"))
+}
+
+enum ExtractionError: Error { case missing(String), unterminated(String) }
+
+@Test func parsesUpdateNoteReplaceAll() throws {
+    let parsed = try CLI.parse(["ofctl", "update", "abc123", "--note", "x", "--note-replace-all"])
+    guard case .update(let update) = parsed.command else {
+        Issue.record("expected an update command")
+        return
+    }
+    #expect(update.noteReplaceAll)
+    #expect(update.note == "x")
+
+    let without = try CLI.parse(["ofctl", "update", "abc123", "--note", "x"])
+    guard case .update(let plain) = without.command else {
+        Issue.record("expected an update command")
+        return
+    }
+    #expect(!plain.noteReplaceAll)
+}
+
 // Regression: `update --project NAME` must resolve projects living in subfolders
 // even under a privacy scope (which auto-fills a default top-level folder). The
 // bug gated resolution on `effectiveFolder`, excluding every subfolder project.

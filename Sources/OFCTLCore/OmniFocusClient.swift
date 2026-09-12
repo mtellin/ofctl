@@ -754,6 +754,7 @@ enum OmniJavaScript {
         return """
         (() => {
           \(markdownNoteSupport)
+          \(stateBlockSupport)
           \(privacy)
           \(taskSerializationSupport)
           \(folderSupport)
@@ -773,6 +774,7 @@ enum OmniJavaScript {
             repeatMethod: \(repeatMethod),
             estimatedMinutes: \(estimatedMinutes),
             note: \(note),
+            noteReplaceAll: \(task.noteReplaceAll ? "true" : "false"),
             sequential: \(sequential),
             completedByChildren: \(completedByChildren),
             flagged: \(flagged),
@@ -930,7 +932,7 @@ enum OmniJavaScript {
 
           const resultTasks = resolvedTasks.map(task => {
             if (input.name !== null) { task.name = input.name; }
-            if (input.note !== null) { setMarkdownNote(task, input.note); }
+            if (input.note !== null) { setMarkdownNote(task, input.noteReplaceAll ? input.note : noteWithPreservedState(noteTextToMarkdown(task.noteText), input.note)); }
             if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
             if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
             if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
@@ -2493,14 +2495,55 @@ function composeStateNote(freeform, state, order) {
   if (trimmedFreeform.length === 0) { return block; }
   return trimmedFreeform + "\n\n" + block;
 }
+
+// Does this text end in a real state block, as opposed to merely mentioning the
+// sentinel? Every non-empty line below the marker must parse as "key: value".
+// Prose that discusses the convention (documentation, a pasted note about it)
+// fails this and is therefore treated as prose, so it cannot hijack the block.
+function hasWellFormedStateBlock(markdown) {
+  const parsed = parseStateBlock(markdown);
+  if (!parsed.hasBlock) { return false; }
+  const lines = (markdown || "").replace(/\r\n/g, "\n").split("\n");
+  let marker = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === STATE_MARKER) { marker = i; break; }
+  }
+  let sawKey = false;
+  for (let i = marker + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length === 0) { continue; }
+    const colon = line.indexOf(":");
+    if (colon <= 0) { return false; }
+    if (line.slice(0, colon).trim().length === 0) { return false; }
+    sawKey = true;
+  }
+  return sawKey;
+}
+
+// Resolve a note write against the note already on the object. A note's freeform
+// prose and its state block share one field, so a naive write of prose silently
+// destroys the block. Callers that mean to replace everything pass
+// --note-replace-all and never reach here; this path decides for the rest:
+//   - text already ends in a well-formed block -> the caller composed the whole
+//     note itself (an older state engine, predating the flag); take it verbatim.
+//   - otherwise it is prose; replace only the freeform region and re-emit the
+//     existing block untouched.
+function noteWithPreservedState(existingMarkdown, text) {
+  const incoming = text || "";
+  if (hasWellFormedStateBlock(incoming)) { return incoming; }
+  const parsed = parseStateBlock(existingMarkdown || "");
+  if (!parsed.hasBlock) { return incoming.replace(/\s+$/, ""); }
+  return composeStateNote(incoming, parsed.state, parsed.order);
+}
 """#
 
 // Edits a project's freeform note (set / prepend / clear) while preserving the
-// trailing "=== ofctl-state ===" block verbatim. Depends on parseStateBlock and
-// composeStateNote from stateBlockSupport, and noteTextToMarkdown from
-// markdownNoteSupport.
+// trailing "=== ofctl-state ===" block verbatim. Depends on parseStateBlock,
+// composeStateNote and hasWellFormedStateBlock from stateBlockSupport, and
+// noteTextToMarkdown from markdownNoteSupport.
 private let projectNoteSupport = #"""
 function applyProjectNoteEdit(project, mode, text) {
+  if (mode === "set" && hasWellFormedStateBlock(text || "")) { return text; }
   const parsed = parseStateBlock(noteTextToMarkdown(project.noteText));
   let newFreeform;
   if (mode === "clear") {
