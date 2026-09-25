@@ -40,6 +40,8 @@ struct OFCTL {
                 print(try client.updateProjectNote(update))
             case .projectCompletion(let update):
                 print(try client.updateProjectCompletion(update))
+            case .projectType(let update):
+                print(try client.updateProjectType(update))
             case .projectCreate(let create):
                 print(try client.createProject(create))
             case .folderCreate(let create):

@@ -901,6 +901,24 @@ ofctl project-completion "Product Launch" --complete-with-last-action --dry-run
 This controls OmniFocus's project `completedByChildren` property. It applies to
 parallel and sequential projects, not single-action lists.
 
+## Project Type
+
+Switch an existing project between a single-action list, a sequential project,
+and a parallel project. Exactly one type flag is required. The project can be
+named or given by id:
+
+```sh
+ofctl project-type "Product Launch" --singleton
+ofctl project-type "Product Launch" --sequential
+ofctl project-type "Product Launch" --parallel
+ofctl project-type "Product Launch" --parallel --dry-run
+```
+
+The output reports `type` and `previousType`. Turning a single-action list into
+a project clears `containsSingletonActions` before setting the ordering, and
+turning a project into a single-action list clears `sequential`. After the
+write, ofctl reads the type back and fails if OmniFocus did not apply it.
+
 ## Move A Project
 
 Move a project into a folder:

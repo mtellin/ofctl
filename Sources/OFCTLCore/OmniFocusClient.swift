@@ -93,6 +93,10 @@ public struct OmniFocusClient {
         try runner.runOmniJavaScript(OmniJavaScript.updateProjectCompletion(update, privacyScope: privacyScope))
     }
 
+    public func updateProjectType(_ update: UpdateProjectType) throws -> String {
+        try runner.runOmniJavaScript(OmniJavaScript.updateProjectType(update, privacyScope: privacyScope))
+    }
+
     public func createProject(_ create: CreateProject) throws -> String {
         try runner.runOmniJavaScript(OmniJavaScript.createProject(create, privacyScope: privacyScope))
     }
@@ -1380,6 +1384,65 @@ enum OmniJavaScript {
               completeWithLastAction: project.completedByChildren,
               previousCompleteWithLastAction
             },
+            meta: { privacyScope }
+          }, null, 2);
+        })();
+        """
+    }
+
+    static func updateProjectType(_ update: UpdateProjectType, privacyScope: PrivacyScope = .unrestricted) throws -> String {
+        let project = try jsonLiteral(update.project)
+        let privacy = try privacyPrelude(privacyScope)
+
+        return """
+        (() => {
+          \(privacy)
+          \(taskSerializationSupport)
+
+          const input = {
+            project: \(project),
+            type: "\(update.type.rawValue)",
+            dryRun: \(update.dryRun ? "true" : "false")
+          };
+
+          const project = resolveProjectByNameOrId(input.project);
+          if (!project) {
+            throw new Error(`Project not found: ${input.project}`);
+          }
+          assertProjectAvailableInPrivacyScope(project, `Project not found or not available in current privacy scope: ${input.project}`);
+
+          function projectType(p) {
+            if (p.containsSingletonActions) { return "singleton"; }
+            return p.sequential ? "sequential" : "parallel";
+          }
+
+          const previousType = projectType(project);
+          if (input.dryRun) {
+            return JSON.stringify({
+              dryRun: true,
+              project: { id: project.id.primaryKey, name: project.name, type: input.type, previousType },
+              meta: { privacyScope }
+            }, null, 2);
+          }
+
+          // `sequential` only matters once `containsSingletonActions` is off, so a
+          // singleton is cleared before the ordering is set; the read-back below
+          // fails loudly if OmniFocus did not land on the requested type.
+          if (input.type === "singleton") {
+            project.sequential = false;
+            project.containsSingletonActions = true;
+          } else {
+            project.containsSingletonActions = false;
+            project.sequential = input.type === "sequential";
+          }
+
+          const type = projectType(project);
+          if (type !== input.type) {
+            throw new Error(`OmniFocus did not apply project type ${input.type} to ${project.name}; it is ${type}`);
+          }
+
+          return JSON.stringify({
+            project: { id: project.id.primaryKey, name: project.name, type, previousType },
             meta: { privacyScope }
           }, null, 2);
         })();

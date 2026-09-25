@@ -33,6 +33,7 @@ The command surface is intentionally narrow:
 - `project-rename PROJECT_NAME --to NEW_NAME` for native project renames
 - `project-note PROJECT_NAME_OR_ID` to set (`--note TEXT` / `--note-file PATH`), prepend (`--prepend TEXT`), or clear (`--note none`) a project's freeform note; accepts a project name or id, and preserves any trailing `=== ofctl-state ===` block (as task `update --note` also does). Use `--prepend` to add a reference link (e.g. an `obsidian://` deep link) to the top of a project that maps 1:1 to an external note
 - `project-completion PROJECT_NAME --complete-with-last-action|--no-complete-with-last-action` for the project "Complete with last action" flag on parallel/sequential projects
+- `project-type PROJECT_NAME_OR_ID --singleton|--sequential|--parallel` to change an existing project's type. Use this instead of raw OmniFocus automation
 - `project-create` to create a new project in a folder, optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`)
 - `folder-create` to create a new OmniFocus folder, optionally nested inside an existing parent folder
 - `tags` to list all tags with paths (not folder-scoped; always returns all tags)

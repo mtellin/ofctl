@@ -235,6 +235,7 @@ ofctl projects --format text
 ofctl projects --due-for-review --format text
 ofctl projects --folder Work --status active --format text
 ofctl project-completion "Product Launch" --complete-with-last-action --dry-run
+ofctl project-type "Product Launch" --singleton --dry-run
 ofctl project-review "Work Notifications" --interval 1w
 ofctl project-review "Work Notifications" --mark-reviewed
 ofctl project-review "Work Notifications" --mark-reviewed --interval 2w --dry-run
@@ -293,6 +294,8 @@ ofctl project-delete "Home Maintenance"
   a project by name or id. Preserves any trailing `=== ofctl-state ===` block.
 - `ofctl project-completion`: set or unset a parallel/sequential project's
   "Complete with last action" flag.
+- `ofctl project-type`: switch an existing project between single-action list
+  (`--singleton`), sequential (`--sequential`), and parallel (`--parallel`).
 - `ofctl project-create`: create a new project, optionally in a folder and
   optionally as a single-action list (`--singleton`) or on-hold (`--on-hold`).
 - `ofctl folder-create`: create a new OmniFocus folder, optionally nested

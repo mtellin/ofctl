@@ -1012,6 +1012,41 @@ import Testing
     }
 }
 
+@Test func parsesProjectType() throws {
+    let singleton = try CLI.parse(["ofctl", "project-type", "Product Launch", "--singleton", "--dry-run"])
+    #expect(singleton == CommandLineOptions(command: .projectType(UpdateProjectType(
+        project: "Product Launch",
+        type: .singleton,
+        dryRun: true
+    ))))
+
+    let sequential = try CLI.parse(["ofctl", "project-type", "Product Launch", "--sequential"])
+    #expect(sequential == CommandLineOptions(command: .projectType(UpdateProjectType(
+        project: "Product Launch",
+        type: .sequential,
+        dryRun: false
+    ))))
+
+    let parallel = try CLI.parse(["ofctl", "project-type", "Product Launch", "--parallel"])
+    #expect(parallel == CommandLineOptions(command: .projectType(UpdateProjectType(
+        project: "Product Launch",
+        type: .parallel,
+        dryRun: false
+    ))))
+}
+
+@Test func parsesProjectTypeRequiresExactlyOneType() {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "project-type", "Product Launch"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "project-type", "Product Launch", "--singleton", "--parallel"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "project-type", "--sequential"])
+    }
+}
+
 @Test func parsesProjectCreate() throws {
     let options = try CLI.parse([
         "ofctl", "project-create", "Work Notifications",
@@ -1591,6 +1626,11 @@ import Testing
     #expect(moveTasksScript.contains("moveTasks(resolvedTasks, destinationLocation)"))
     #expect(projectScript.contains("assertProjectAvailableInPrivacyScope(project"))
     #expect(projectCompletionScript.contains("assertProjectAvailableInPrivacyScope(project"))
+    let projectTypeScript = try OmniJavaScript.updateProjectType(
+        UpdateProjectType(project: "Product Launch", type: .singleton, dryRun: true),
+        privacyScope: .work
+    )
+    #expect(projectTypeScript.contains("assertProjectAvailableInPrivacyScope(project"))
 
     let moveScript = try OmniJavaScript.moveProject(
         MoveProject(project: "Home Maintenance", folder: "Home", dryRun: true),
@@ -1714,6 +1754,19 @@ import Testing
     #expect(projectScript.contains("project.completedByChildren = input.completeWithLastAction;"))
     #expect(projectScript.contains("Complete with last action only applies to parallel and sequential projects"))
     #expect(projectScript.contains("completeWithLastAction: project.completedByChildren"))
+}
+
+@Test func generatedProjectTypeScriptClearsSingletonAndVerifies() throws {
+    let projectScript = try OmniJavaScript.updateProjectType(UpdateProjectType(
+        project: "Product Launch",
+        type: .sequential,
+        dryRun: false
+    ))
+
+    #expect(projectScript.contains("type: \"sequential\""))
+    #expect(projectScript.contains("project.containsSingletonActions = false;"))
+    #expect(projectScript.contains("project.sequential = input.type === \"sequential\";"))
+    #expect(projectScript.contains("OmniFocus did not apply project type"))
 }
 
 private func defaultTaskQuery() -> TaskQuery {

@@ -29,6 +29,7 @@ public struct CommandLineOptions: Equatable {
         case projectRename(RenameProject)
         case projectNote(UpdateProjectNote)
         case projectCompletion(UpdateProjectCompletion)
+        case projectType(UpdateProjectType)
         case projectCreate(CreateProject)
         case folderCreate(CreateFolder)
         case tags(TagsQuery)
@@ -214,6 +215,18 @@ public struct UpdateProjectCompletion: Equatable {
     public var dryRun: Bool
 }
 
+public enum ProjectType: String, Equatable {
+    case singleton
+    case sequential
+    case parallel
+}
+
+public struct UpdateProjectType: Equatable {
+    public var project: String
+    public var type: ProjectType
+    public var dryRun: Bool
+}
+
 public struct MoveTasks: Equatable {
     public var ids: [String]
     public var destination: TaskMoveDestination
@@ -388,6 +401,7 @@ public enum CLI {
       ofctl project-rename PROJECT_NAME --to NEW_NAME [--dry-run]
       ofctl project-note PROJECT_NAME_OR_ID (--note TEXT|--note-file PATH|--prepend TEXT|--note none) [--dry-run]
       ofctl project-completion PROJECT_NAME (--complete-with-last-action|--no-complete-with-last-action) [--dry-run]
+      ofctl project-type PROJECT_NAME_OR_ID (--singleton|--sequential|--parallel) [--dry-run]
       ofctl project-create NAME [--folder FOLDER_NAME] [--singleton] [--on-hold] [--dry-run]
       ofctl folder-create NAME [--parent FOLDER_PATH] [--dry-run]
       ofctl tags [--format json|text]
@@ -457,6 +471,8 @@ public enum CLI {
             return try CommandLineOptions(command: .projectNote(parseProjectNote(args)))
         case "project-completion":
             return try CommandLineOptions(command: .projectCompletion(parseUpdateProjectCompletion(args)))
+        case "project-type":
+            return try CommandLineOptions(command: .projectType(parseUpdateProjectType(args)))
         case "project-create":
             return try CommandLineOptions(command: .projectCreate(parseCreateProject(args)))
         case "folder-create":
@@ -1110,6 +1126,43 @@ public enum CLI {
         }
 
         return UpdateProjectCompletion(project: project, completeWithLastAction: completeWithLastAction, dryRun: dryRun)
+    }
+
+    private static func parseUpdateProjectType(_ args: [String]) throws -> UpdateProjectType {
+        var parser = OptionParser(args)
+        guard let project = parser.next(), !project.hasPrefix("--") else {
+            throw CLIError.usage("project-type requires a project name or id\n\n\(help)")
+        }
+
+        var type: ProjectType?
+        var dryRun = false
+
+        while let arg = parser.next() {
+            let flagType: ProjectType?
+            switch arg {
+            case "--singleton":
+                flagType = .singleton
+            case "--sequential":
+                flagType = .sequential
+            case "--parallel":
+                flagType = .parallel
+            case "--dry-run":
+                dryRun = true
+                continue
+            default:
+                throw CLIError.usage("Unexpected argument for project-type: \(arg)")
+            }
+            if let type, type != flagType {
+                throw CLIError.usage("project-type accepts only one of --singleton, --sequential, or --parallel")
+            }
+            type = flagType
+        }
+
+        guard let type else {
+            throw CLIError.usage("project-type requires --singleton, --sequential, or --parallel")
+        }
+
+        return UpdateProjectType(project: project, type: type, dryRun: dryRun)
     }
 
     private static func parseCreateProject(_ args: [String]) throws -> CreateProject {
