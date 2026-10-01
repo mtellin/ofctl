@@ -921,6 +921,15 @@ enum OmniJavaScript {
             }, null, 2);
           }
 
+          // Check every note before anything is changed, so one refused note cannot
+          // leave the other tasks (or the project move below) half applied.
+          if (input.note !== null) {
+            resolvedTasks.forEach(task => {
+              const previous = noteTextToMarkdown(task.noteText);
+              assertNoteStorable(task, input.noteReplaceAll ? input.note : noteWithPreservedState(previous, input.note), previous);
+            });
+          }
+
           let projectCreated = false;
           if (input.project !== undefined) {
             const projectResult = input.project === null
@@ -2440,21 +2449,31 @@ function markdownRuns(markdown) {
 // cached pre-write object, and styling it writes the OLD text back over the new
 // note, silently (measured live 2026-10-01).
 //
-// Pieces start from the old note's base style, which is its first character's
-// style. Attributes that would carry a bold/italic/code/heading first character
-// onto plain text are reset to their defaults; the font family and size are
-// otherwise kept, so the user's note font is not replaced.
+// Pieces take their base style from an unformatted stretch of the old note (no
+// link, bold, italic or code), so the user's note font is kept and nothing from a
+// formatted first character (an auto-linked URL, an italic word) spreads over the
+// new note. OmniJS cannot construct a neutral Style, so when the old note has no
+// unformatted stretch the text is written plain, without styling.
+function cleanNoteStyle(noteObj) {
+  const A = Style.Attribute;
+  const isClean = style => {
+    const link = style.get(A.Link);
+    return !(link && link.string && link.string.length > 0) &&
+      !(style.get(A.FontWeight) >= 7) && !style.get(A.FontItalic) && !style.get(A.FontFixedPitch);
+  };
+  if (noteObj.range.isEmpty) { return isClean(noteObj.style) ? noteObj.style : null; }
+  const run = noteObj.ranges(TextComponent.AttributeRuns).find(range => isClean(noteObj.styleForRange(range)));
+  return run ? noteObj.styleForRange(run) : null;
+}
+
 function setMarkdownNote(task, markdown) {
   const parsed = markdownRuns(markdown || "");
   const A = Style.Attribute;
-  const base = task.noteText.style;
-  const leaks = [];
-  if (base.get(A.FontWeight) >= 7) {
-    leaks.push(A.FontWeight);
-    if (base.get(A.FontSize) !== A.FontSize.defaultValue) { leaks.push(A.FontSize); }
+  const base = cleanNoteStyle(task.noteText);
+  if (!base) {
+    task.note = parsed.plain;
+    return;
   }
-  if (base.get(A.FontItalic)) { leaks.push(A.FontItalic); }
-  if (base.get(A.FontFixedPitch)) { leaks.push(A.FontFixedPitch, A.FontFamily); }
 
   const cuts = new Set([0, parsed.plain.length]);
   parsed.runs.forEach(run => { cuts.add(run.start); cuts.add(run.end); });
@@ -2467,7 +2486,6 @@ function setMarkdownNote(task, markdown) {
     if (start >= end) { continue; }
     const piece = new Text(parsed.plain.slice(start, end), base);
     const style = piece.style;
-    leaks.forEach(attribute => style.set(attribute, attribute.defaultValue));
 
     parsed.runs.filter(run => run.start <= start && run.end >= end).forEach(run => {
       if (run.style.bold) {
@@ -2620,25 +2638,35 @@ function noteWithPreservedState(existingMarkdown, text) {
   return composeStateNote(incoming, parsed.state, parsed.order);
 }
 
-// Post-write read-back. A note is written as markdown, so a state value holding
+// Read-back check. A note is written as markdown, so a state value holding
 // literal * ` ** or [text](url) is parsed as markup and stored altered, and the
-// write still reported success. Compare the state block that was meant to be
-// written with the plain text OmniFocus actually stored. The intended side is
-// markdown (values a read escaped, like "Some\_Field", are unescaped first); the
-// stored side is task.note, because noteTextToMarkdown(noteText) read in the same
-// script as the write can miss the newest line (measured live 2026-10-01).
-function stateReadBackProblems(intendedMarkdown, storedPlain) {
-  const canonical = (state, unescape) => {
-    const out = {};
-    const norm = v => (unescape ? unescapeMarkdownText(v || "") : (v || "")).replace(/\s+$/, "");
-    Object.keys(state).forEach(k => { out[norm(k)] = norm(state[k]); });
-    return out;
-  };
-  const intended = parseStateBlock(intendedMarkdown);
-  const want = canonical(intended.state, true);
-  const got = canonical(parseStateBlock(storedPlain).state, false);
+// write used to report success. Compare the state block meant to be written with
+// the plain text stored (or, before writing, the plain text that would be stored).
+// A key whose value is new or changed must be stored exactly as written. A key
+// carried over unchanged from the previous note is in its escaped read form, and
+// may already hold formatting from an earlier write, so it only has to come back
+// as its own plain rendering. The stored side is task.note, because
+// noteTextToMarkdown(noteText) read in the same script as the write can miss the
+// newest line (measured live 2026-10-01).
+function stateReadBackProblems(intendedMarkdown, storedPlain, previousMarkdown) {
+  const lf = v => (v || "").replace(/\r\n?/g, "\n");
+  const trim = v => (v || "").replace(/\s+$/, "");
+  const rendered = v => trim(markdownRuns(v || "").plain);
+  const intended = parseStateBlock(lf(intendedMarkdown));
+  const previous = parseStateBlock(lf(previousMarkdown)).state;
+  const stored = parseStateBlock(lf(storedPlain)).state;
+  const got = {};
+  Object.keys(stored).forEach(k => { got[trim(k)] = trim(stored[k]); });
+
+  const want = {};
+  Object.keys(intended.state).forEach(k => {
+    const value = intended.state[k];
+    const carried = Object.prototype.hasOwnProperty.call(previous, k) && previous[k] === value;
+    want[carried ? rendered(k) : trim(k)] = carried ? rendered(value) : trim(value);
+  });
+
   const problems = [];
-  if (intended.order.length > 0 && !hasWellFormedStateBlock(storedPlain)) {
+  if (hasWellFormedStateBlock(lf(intendedMarkdown)) && !hasWellFormedStateBlock(lf(storedPlain))) {
     problems.push("state block is no longer well-formed");
   }
   Object.keys(want).forEach(k => {
@@ -2650,18 +2678,32 @@ function stateReadBackProblems(intendedMarkdown, storedPlain) {
   return problems;
 }
 
-// Write the note, read it back, and on any mismatch (text not persisted, or state
-// altered) restore the previous note and fail loudly instead of reporting success.
+const NOTE_MARKUP_HINT = "Literal * ` ** and [text](url) in a state value are parsed as markdown and cannot be stored as written.";
+
+// Refuse, before anything is changed, a note whose state values would be stored
+// altered. Callers that touch several objects run this for all of them first.
+function assertNoteStorable(target, markdown, previousMarkdown) {
+  const problems = stateReadBackProblems(markdown, markdownRuns(markdown || "").plain, previousMarkdown);
+  if (problems.length === 0) { return; }
+  throw new Error("Note not written on " + target.id.primaryKey + "; nothing was changed. " +
+    problems.join("; ") + ". " + NOTE_MARKUP_HINT);
+}
+
+// Write the note, then read it back. If the text did not persist, restore the
+// previous note, confirm the restore, and fail loudly instead of reporting success.
 function setMarkdownNoteVerified(target, markdown) {
   const before = noteTextToMarkdown(target.noteText);
+  assertNoteStorable(target, markdown, before);
   setMarkdownNote(target, markdown);
-  const problems = stateReadBackProblems(markdown, target.note);
-  if (target.note !== markdownRuns(markdown || "").plain) { problems.unshift("note text did not persist"); }
+  const lf = v => (v || "").replace(/\r\n?/g, "\n");
+  const problems = stateReadBackProblems(markdown, target.note, before);
+  if (lf(target.note) !== lf(markdownRuns(markdown || "").plain)) { problems.unshift("note text did not persist"); }
   if (problems.length === 0) { return; }
   setMarkdownNote(target, before);
-  throw new Error("Note write failed read-back verification on " + target.id.primaryKey +
-    "; the previous note was restored. " + problems.join("; ") +
-    ". Literal * ` ** and [text](url) in a state value are parsed as markdown and cannot be stored as written.");
+  const restored = lf(target.note) === lf(markdownRuns(before).plain);
+  throw new Error("Note write failed read-back verification on " + target.id.primaryKey + "; " +
+    (restored ? "the previous note was restored. " : "restoring the previous note could NOT be confirmed; check it by hand. ") +
+    problems.join("; ") + ". " + NOTE_MARKUP_HINT);
 }
 """#
 

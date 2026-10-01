@@ -2199,7 +2199,19 @@ for (const v of ["!cp *.md *.txt /tmp", "use `make`", "**bold**", "[a](https://x
 }
 // A preserved block re-written from its escaped read form must still verify clean.
 const reread = escapeMarkdownText(stored(note("Some_Field__c")));
-if (stateReadBackProblems(reread, stored(reread)).length) fails.push("re-writing an escaped block was flagged");
+if (stateReadBackProblems(reread, stored(reread), reread).length) fails.push("re-writing an escaped block was flagged");
+// A carried-over value that already holds formatting must not block later writes.
+const styledPrev = note("*italic*");
+if (stateReadBackProblems(styledPrev, stored(styledPrev), styledPrev).length) fails.push("carried-over formatted value was flagged");
+// ...but the same text written fresh is still refused.
+if (!stateReadBackProblems(styledPrev, stored(styledPrev), note("other")).length) fails.push("new formatted value was not flagged");
+// A raw backslash-escape written fresh is stored unescaped, so it is altered.
+if (!stateReadBackProblems(note("a\\_b"), stored(note("a\\_b"))).length) fails.push("fresh escaped value was not flagged");
+// Prose that mentions the sentinel without being a real block is not a block.
+const mention = "How state works:\n=== ofctl-state ===\nFormat: key: value\nSee docs.";
+if (stateReadBackProblems(mention, stored(mention), mention).length) fails.push("sentinel-mentioning prose was flagged");
+// Line endings do not count as a change.
+if (stateReadBackProblems(note("x").replace(/\n/g, "\r\n"), stored(note("x"))).length) fails.push("CRLF was flagged");
 // A destroyed block and a dropped key are both reported.
 if (!stateReadBackProblems(note("x"), "prose").length) fails.push("missing block not reported");
 if (!stateReadBackProblems(note("x"), "prose\n\n=== ofctl-state ===\nslips: 2").length) fails.push("dropped key not reported");
