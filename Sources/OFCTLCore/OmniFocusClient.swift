@@ -2157,23 +2157,30 @@ enum OmniJavaScript {
           let stateMap = parsed.state;
           let order = parsed.order.slice();
           const ensureKey = (k) => { if (order.indexOf(k) === -1) { order.push(k); } };
+          // The read path escapes keys ("slip_count" reads as "slip\\_count"), so match
+          // a requested key against the stored form; otherwise --increment slip_count
+          // appends a second key and the next read silently returns the reset value.
+          const storedKey = (k) => order.find(o => unescapeMarkdownText(o) === k) || k;
 
           if (input.clearAll) {
             stateMap = {};
             order = [];
           }
-          input.clearKeys.forEach(k => {
+          input.clearKeys.forEach(requested => {
+            const k = storedKey(requested);
             delete stateMap[k];
             order = order.filter(o => o !== k);
           });
-          input.increments.forEach(k => {
+          input.increments.forEach(requested => {
+            const k = storedKey(requested);
             const current = parseInt(stateMap[k], 10);
             stateMap[k] = String((Number.isNaN(current) ? 0 : current) + 1);
             ensureKey(k);
           });
           input.sets.forEach(pair => {
-            stateMap[pair.key] = pair.value;
-            ensureKey(pair.key);
+            const k = storedKey(pair.key);
+            stateMap[k] = pair.value;
+            ensureKey(k);
           });
 
           const newMarkdown = composeStateNote(parsed.freeform, stateMap, order);
@@ -2656,21 +2663,32 @@ function stateReadBackProblems(intendedMarkdown, storedPlain, previousMarkdown) 
   const previous = parseStateBlock(lf(previousMarkdown)).state;
   const stored = parseStateBlock(lf(storedPlain)).state;
   const got = {};
-  Object.keys(stored).forEach(k => { got[trim(k)] = trim(stored[k]); });
+  // Keys compare unescaped: a read returns "slip_count" as "slip\_count".
+  const keyOf = k => trim(unescapeMarkdownText(k));
+  Object.keys(stored).forEach(k => { got[keyOf(k)] = trim(stored[k]); });
 
+  // Prose that merely mentions the sentinel is not a state block; nothing to check.
+  if (!hasWellFormedStateBlock(lf(intendedMarkdown))) { return []; }
+
+  const problems = [];
   const want = {};
+  const accept = {};
   Object.keys(intended.state).forEach(k => {
     const value = intended.state[k];
     const carried = Object.prototype.hasOwnProperty.call(previous, k) && previous[k] === value;
-    want[carried ? rendered(k) : trim(k)] = carried ? rendered(value) : trim(value);
+    const key = keyOf(k);
+    if (Object.prototype.hasOwnProperty.call(want, key)) { problems.push(key + ": written twice under different spellings"); }
+    want[key] = carried ? rendered(value) : trim(value);
+    // A new value may arrive in the escaped form a read returns (an engine copying
+    // "Some\_Field" from --get); storing its unescaped text is the intended result.
+    accept[key] = [want[key], trim(unescapeMarkdownText(value))];
   });
 
-  const problems = [];
-  if (hasWellFormedStateBlock(lf(intendedMarkdown)) && !hasWellFormedStateBlock(lf(storedPlain))) {
+  if (!hasWellFormedStateBlock(lf(storedPlain))) {
     problems.push("state block is no longer well-formed");
   }
   Object.keys(want).forEach(k => {
-    if (got[k] !== want[k]) { problems.push(k + ": wrote " + JSON.stringify(want[k]) + ", stored " + JSON.stringify(got[k])); }
+    if (accept[k].indexOf(got[k]) === -1) { problems.push(k + ": wrote " + JSON.stringify(want[k]) + ", stored " + JSON.stringify(got[k])); }
   });
   Object.keys(got).forEach(k => {
     if (!Object.prototype.hasOwnProperty.call(want, k)) { problems.push(k + ": unexpected key stored"); }
@@ -2692,18 +2710,24 @@ function assertNoteStorable(target, markdown, previousMarkdown) {
 // Write the note, then read it back. If the text did not persist, restore the
 // previous note, confirm the restore, and fail loudly instead of reporting success.
 function setMarkdownNoteVerified(target, markdown) {
-  const before = noteTextToMarkdown(target.noteText);
+  const original = target.noteText;
+  const originalPlain = target.note;
+  const before = noteTextToMarkdown(original);
   assertNoteStorable(target, markdown, before);
+  // A real copy, so the restore keeps links and styles the markdown form cannot
+  // carry. Assigning the original object back does not work: it is a live proxy.
+  const snapshot = new Text("", original.style);
+  snapshot.append(original);
   setMarkdownNote(target, markdown);
   const lf = v => (v || "").replace(/\r\n?/g, "\n");
   const problems = stateReadBackProblems(markdown, target.note, before);
   if (lf(target.note) !== lf(markdownRuns(markdown || "").plain)) { problems.unshift("note text did not persist"); }
   if (problems.length === 0) { return; }
-  setMarkdownNote(target, before);
-  const restored = lf(target.note) === lf(markdownRuns(before).plain);
+  target.noteText = snapshot;
+  const restored = lf(target.note) === lf(originalPlain);
   throw new Error("Note write failed read-back verification on " + target.id.primaryKey + "; " +
     (restored ? "the previous note was restored. " : "restoring the previous note could NOT be confirmed; check it by hand. ") +
-    problems.join("; ") + ". " + NOTE_MARKUP_HINT);
+    problems.join("; ") + ". Other changes this command made before the note write may already be applied. " + NOTE_MARKUP_HINT);
 }
 """#
 

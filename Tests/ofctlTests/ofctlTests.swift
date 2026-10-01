@@ -2205,8 +2205,14 @@ const styledPrev = note("*italic*");
 if (stateReadBackProblems(styledPrev, stored(styledPrev), styledPrev).length) fails.push("carried-over formatted value was flagged");
 // ...but the same text written fresh is still refused.
 if (!stateReadBackProblems(styledPrev, stored(styledPrev), note("other")).length) fails.push("new formatted value was not flagged");
-// A raw backslash-escape written fresh is stored unescaped, so it is altered.
-if (!stateReadBackProblems(note("a\\_b"), stored(note("a\\_b"))).length) fails.push("fresh escaped value was not flagged");
+// A new value in the escaped form a read returns is accepted (stored unescaped).
+if (stateReadBackProblems(note("Some\\_Field"), stored(note("Some\\_Field"))).length) fails.push("new escaped-form value was flagged");
+// Two spellings of one key collapse to the same stored key and are reported.
+const prevCount = "p\n\n=== ofctl-state ===\nslip\\_count: 5";
+if (!stateReadBackProblems(prevCount + "\nslip_count: 1", "p\n\n=== ofctl-state ===\nslip_count: 5\nslip_count: 1", prevCount).length) fails.push("collapsed duplicate key not reported");
+// Prose mentioning the sentinel with markup on a key-like line is not a block.
+const mentionMarkup = "Docs:\n=== ofctl-state ===\nExample: **bold** is fine\nSee docs.";
+if (stateReadBackProblems(mentionMarkup, stored(mentionMarkup), "").length) fails.push("sentinel prose with markup was flagged");
 // Prose that mentions the sentinel without being a real block is not a block.
 const mention = "How state works:\n=== ofctl-state ===\nFormat: key: value\nSee docs.";
 if (stateReadBackProblems(mention, stored(mention), mention).length) fails.push("sentinel-mentioning prose was flagged");
