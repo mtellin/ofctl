@@ -2668,7 +2668,9 @@ function stateReadBackProblems(intendedMarkdown, storedPlain, previousMarkdown) 
   Object.keys(stored).forEach(k => { got[keyOf(k)] = trim(stored[k]); });
 
   // Prose that merely mentions the sentinel is not a state block; nothing to check.
-  if (!hasWellFormedStateBlock(lf(intendedMarkdown))) { return []; }
+  // Only when the previous note had no real block either: a write that turns a real
+  // block malformed must still be checked, not waved through.
+  if (!hasWellFormedStateBlock(lf(intendedMarkdown)) && !hasWellFormedStateBlock(lf(previousMarkdown))) { return []; }
 
   const problems = [];
   const want = {};
@@ -2696,7 +2698,7 @@ function stateReadBackProblems(intendedMarkdown, storedPlain, previousMarkdown) 
   return problems;
 }
 
-const NOTE_MARKUP_HINT = "Literal * ` ** and [text](url) in a state value are parsed as markdown and cannot be stored as written.";
+const NOTE_MARKUP_HINT = "Literal * ` ** and [text](url) in a state value are parsed as markdown and cannot be stored as written; a backslash before _ * [ ] ` or \\ is taken as an escape and dropped.";
 
 // Refuse, before anything is changed, a note whose state values would be stored
 // altered. Callers that touch several objects run this for all of them first.

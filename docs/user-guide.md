@@ -1169,7 +1169,10 @@ why: committed in sync; blocks the ADR
 > writing, the note is read back; if the text did not persist, the previous note is
 > restored (and the error says whether the restore was confirmed). Values carried
 > over unchanged from the previous note are not held to this, so a value that
-> already holds formatting does not block later writes.
+> already holds formatting does not block later writes. A backslash before
+> `_`, `*`, `[`, `]`, a backtick or another backslash in a new value is read as
+> an escape and dropped, and
+> `--set` refuses keys or values containing a newline.
 
 ```sh
 ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]

@@ -1909,6 +1909,12 @@ private func defaultUpdateTask() -> UpdateTask {
     }
 }
 
+@Test func rejectsStateSetWithNewline() throws {
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "task-state", "abc123", "--set", "c=1\n2"])
+    }
+}
+
 // The note read/write cycle (noteTextToMarkdown -> markdownRuns) is pure OmniJS
 // embedded as a Swift string, so it cannot be exercised by Swift unit tests
 // directly. This test extracts the markdownNoteSupport block from source and
@@ -2216,6 +2222,11 @@ if (stateReadBackProblems(mentionMarkup, stored(mentionMarkup), "").length) fail
 // Prose that mentions the sentinel without being a real block is not a block.
 const mention = "How state works:\n=== ofctl-state ===\nFormat: key: value\nSee docs.";
 if (stateReadBackProblems(mention, stored(mention), mention).length) fails.push("sentinel-mentioning prose was flagged");
+// A write that turns a real block malformed is still checked, so an altered value
+// riding along with it is caught.
+const realPrev = note("x");
+const malformed = "prose\n\n=== ofctl-state ===\nslips: 2\nb: **x**\nc: 1\n2";
+if (!stateReadBackProblems(malformed, stored(malformed), realPrev).length) fails.push("malformed block hid an altered value");
 // Line endings do not count as a change.
 if (stateReadBackProblems(note("x").replace(/\n/g, "\r\n"), stored(note("x"))).length) fails.push("CRLF was flagged");
 // A destroyed block and a dropped key are both reported.

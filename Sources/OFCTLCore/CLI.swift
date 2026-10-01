@@ -1295,6 +1295,11 @@ public enum CLI {
                 }
                 let key = String(pair[pair.startIndex..<eq])
                 let value = String(pair[pair.index(after: eq)...])
+                // A state block is one "key: value" per line; a newline would split
+                // the entry and leave a malformed block.
+                guard !pair.contains(where: \.isNewline) else {
+                    throw CLIError.usage("--set KEY=VALUE cannot contain a newline")
+                }
                 sets.append(StateAssignment(key: key, value: value))
             case "--increment":
                 increments.append(try parser.value(after: arg))
