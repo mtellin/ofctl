@@ -204,7 +204,8 @@ Supported mappings:
 - `**bold**`
 - `*italic*`
 - `` `inline code` ``
-- `#`, `##`, and `###` headings
+- `#`, `##`, and `###` headings, sized relative to the note's body text
+- `\#` at the start of a line for a literal `#` (a typed `# ` line reads back this way)
 - OmniFocus bullet text normalized to Markdown-style list markers on read
 
 Markdown links are preserved losslessly as readable text in the form

@@ -2301,7 +2301,7 @@ console.log("ok");
     #expect(close > open)
     let js = lines[(open + 1)..<close].joined(separator: "\n")
 
-    let harness = #"""
+    let harness = ###"""
 
 const Style = { Attribute: { Link: "link", FontWeight: "weight", FontItalic: "italic", FontFixedPitch: "fixed",
   FontSize: "size", UnderlineStyle: "underline", StrikethroughStyle: "strike", BackgroundColor: "background" } };
@@ -2331,7 +2331,22 @@ expectEq("h2", noteTextToMarkdown(note([["Intro", {}], ["\n", {}], ["Part", bold
 expectEq("h3 last line", noteTextToMarkdown(note([["body\n", {}], ["Sub", bold(15)]])), "body\n### Sub");
 expectEq("mid-line bold", noteTextToMarkdown(note([["say ", {}], ["Big", bold(20)], [" more", {}]])), "say **Big** more");
 expectEq("body-size bold", noteTextToMarkdown(note([["Bold", bold(13)], ["\nbody", {}]])), "**Bold**\nbody");
-expectEq("body already heading-sized", noteTextToMarkdown(note([["Head", bold(15)], ["\nbody", { size: 15 }]])), "**Head**\nbody");
+expectEq("body-size bold in a 15pt note", noteTextToMarkdown(note([["Head", bold(15)], ["\nbody", { size: 15 }]])), "**Head**\nbody");
+// Headings are sized from the body text, so a 15pt note's h1 is 22pt.
+expectEq("h1 in a 15pt note", noteTextToMarkdown(note([["Head\n", bold(22)], ["body", { size: 15 }]])), "# Head\nbody");
+// Headings written at the old fixed sizes still read back in a 13pt note.
+expectEq("legacy h3", noteTextToMarkdown(note([["Sub\n", bold(15)], ["body", {}]])), "### Sub\nbody");
+
+// A literal "# " typed at the start of a line reads back escaped, and writes back
+// as literal text, not as a heading that drops the marker.
+const literal = noteTextToMarkdown(note([["intro\n# not a heading\n## nor this\nmid # stays", {}]]));
+expectEq("literal hashes escaped", literal, "intro\n\\# not a heading\n\\## nor this\nmid # stays");
+const literalWrite = markdownRuns(literal);
+expectEq("literal hashes written", literalWrite.plain, "intro\n# not a heading\n## nor this\nmid # stays");
+if (literalWrite.runs.some(r => r.style.heading)) { fails.push("escaped # parsed as a heading"); }
+expectEq("run starting mid-line", noteTextToMarkdown(note([["a", { italic: true }], ["# b", {}]])), "*a*# b");
+// A literal backslash before a hash still round-trips as text.
+expectEq("literal backslash-hash", markdownRuns(noteTextToMarkdown(note([["\\# x", {}]]))).plain, "\\# x");
 
 // Write -> read -> write keeps the heading and its text.
 const written = markdownRuns("# Title\nbody");
@@ -2347,7 +2362,7 @@ expectEq("no clean run", cleanNoteStyle(note([["all bold", bold(13)]])), null);
 
 if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
 console.log("ok");
-"""#
+"""###
 
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("ofctl-styled-\(UUID().uuidString).mjs")

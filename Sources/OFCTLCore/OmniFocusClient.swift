@@ -2399,9 +2399,34 @@ function normalizeOmniMarkdown(markdown) {
     .replace(/\t/g, "  ");
 }
 
+// Headings are written this much larger than the note's body text (20/17/15 on
+// the default 13pt), so a note in any body size can tell them apart on read.
+const HEADING_SIZE_STEP = { 1: 7, 2: 4, 3: 2 };
+
+function headingLevelForSize(size, baseSize) {
+  if (baseSize !== null && baseSize !== undefined) {
+    for (const level of [1, 2, 3]) {
+      if (size === baseSize + HEADING_SIZE_STEP[level]) { return level; }
+    }
+    if (size === baseSize) { return 0; }
+  }
+  // Headings written before sizes were relative used these fixed sizes.
+  return { 20: 1, 17: 2, 15: 3 }[size] || 0;
+}
+
+// A literal "# " at the start of a line would become a heading on the next write,
+// and lose its marker. Put a backslash before it; markdownRuns reads that back as "#".
+function escapeLineStartHashes(text, atLineStart) {
+  return text.replace(/(^|\n)(?=#{1,3} )/g, (match, before, index) =>
+    (index === 0 && before === "" && !atLineStart) ? match : before + "\\");
+}
+
 function markdownRuns(markdown) {
   const runs = [];
   let plain = "";
+  // A backslash and "#" at the start of a line is a literal "#", not a heading marker. Hold it as
+  // a one-character placeholder until headings are parsed, so offsets stay put.
+  markdown = (markdown || "").replace(/(^|\n)\\[#](?=#{0,2} )/g, "$1\uE000");
   // Opening delimiters are guarded with (?<!\\) so an *escaped* delimiter is not
   // treated as a token. On read, escapeMarkdownText backslash-escapes literal
   // * ** ` [ ] in note text; those escaped forms must fall through to
@@ -2468,6 +2493,7 @@ function markdownRuns(markdown) {
     headingPattern.lastIndex -= removed;
   }
 
+  plain = plain.replace(/\uE000/g, "#");
   return { plain, runs };
 }
 
@@ -2517,6 +2543,7 @@ function setMarkdownNote(task, markdown) {
     task.note = parsed.plain;
     return;
   }
+  const baseSize = base.get(A.FontSize) || 13;
 
   const cuts = new Set([0, parsed.plain.length]);
   parsed.runs.forEach(run => { cuts.add(run.start); cuts.add(run.end); });
@@ -2543,7 +2570,7 @@ function setMarkdownNote(task, markdown) {
       }
       if (run.style.heading) {
         style.set(A.FontWeight, 9);
-        style.set(A.FontSize, run.style.heading === 1 ? 20 : (run.style.heading === 2 ? 17 : 15));
+        style.set(A.FontSize, baseSize + HEADING_SIZE_STEP[run.style.heading]);
       }
     });
     whole.append(piece);
@@ -2569,7 +2596,8 @@ function noteTextToMarkdown(noteObj) {
     const fontItalic = style.get(Style.Attribute.FontItalic);
     const fixedPitch = style.get(Style.Attribute.FontFixedPitch);
 
-    let text = escapeMarkdownText(raw);
+    const atLineStart = start === 0 || full[start - 1] === "\n";
+    let text = escapeLineStartHashes(escapeMarkdownText(raw), atLineStart);
 
     if (fixedPitch) {
       text = wrapMarkdownRun(raw.replace(/`/g, "\\`"), "`", "`");
@@ -2579,16 +2607,16 @@ function noteTextToMarkdown(noteObj) {
     }
     if (fontWeight >= 7) {
       text = wrapMarkdownRun(raw, "**", "**");
-      // A whole bold line in a heading size that setMarkdownNote writes (and not
-      // the body size) reads back as that heading, so "# Title" survives the
-      // round trip instead of turning into **Title**. OmniFocus gives a line's
-      // newline the line's style, so the run usually ends in "\n".
-      const level = { 20: 1, 17: 2, 15: 3 }[style.get(Style.Attribute.FontSize)];
+      // A whole bold line in a heading size that setMarkdownNote writes reads back
+      // as that heading, so "# Title" survives the round trip instead of turning
+      // into **Title**. OmniFocus gives a line's newline the line's style, so the
+      // run usually ends in "\n".
+      const level = headingLevelForSize(style.get(Style.Attribute.FontSize), baseSize);
       const line = raw.replace(/\n+$/, "");
       const breaks = raw.slice(line.length);
-      const wholeLine = (start === 0 || full[start - 1] === "\n") &&
+      const wholeLine = atLineStart &&
         (breaks.length > 0 || offset === full.length || full[offset] === "\n");
-      if (level && style.get(Style.Attribute.FontSize) !== baseSize && wholeLine && !fontItalic && !fixedPitch &&
+      if (level && wholeLine && !fontItalic && !fixedPitch &&
           line.trim().length > 0 && line.indexOf("\n") === -1) {
         text = "#".repeat(level) + " " + escapeMarkdownText(line) + breaks;
       }
@@ -2603,7 +2631,7 @@ function noteTextToMarkdown(noteObj) {
       // round trip accumulated another copy. Bare-emitting URL-valued text
       // keeps the round trip idempotent.
       const rawIsUrl = /^\w[\w+.-]*:\/\//.test(raw.trim());
-      text = (raw === link.string || rawIsUrl) ? escapeMarkdownText(raw) : markdownLinkRun(raw, link.string);
+      text = (raw === link.string || rawIsUrl) ? escapeLineStartHashes(escapeMarkdownText(raw), atLineStart) : markdownLinkRun(raw, link.string);
     }
 
     return text;
