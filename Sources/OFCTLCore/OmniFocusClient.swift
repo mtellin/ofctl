@@ -2512,7 +2512,9 @@ function markdownRuns(markdown) {
 // link, bold, italic or code), so the user's note font is kept and nothing from a
 // formatted first character (an auto-linked URL, an italic word) spreads over the
 // new note. OmniJS cannot construct a neutral Style, so when the old note has no
-// unformatted stretch the text is written plain, without styling.
+// unformatted stretch the text is written plain, without styling. (A new Text built
+// from a style inherits from it, and Style.clear() does not break that link, so
+// clearing a heading's style still reads 20pt bold: measured live 2026-10-01.)
 // requireText skips whitespace-only runs: a blank line says nothing about the
 // body size, and the heading read needs the size of real body text.
 function cleanNoteStyle(noteObj, requireText) {
@@ -2553,11 +2555,17 @@ function setMarkdownNote(task, markdown) {
     return;
   }
   // A note with no plain text has no body size to read headings against, so its
-  // headings use the fixed 13pt-based sizes, which the read falls back to.
+  // headings use the fixed 13pt-based sizes, which the read falls back to. This
+  // mirrors the read: a [text](url) link is written as plain "text (url)", but
+  // OmniFocus auto-links the URL itself, so URLs never count as body text.
   const styled = new Array(parsed.plain.length).fill(false);
+  const mark = (start, end) => { for (let i = start; i < end; i += 1) { styled[i] = true; } };
   parsed.runs.forEach(run => {
-    for (let i = run.start; i < run.end; i += 1) { styled[i] = true; }
+    if (run.style.bold || run.style.italic || run.style.code || run.style.heading) { mark(run.start, run.end); }
   });
+  const urlPattern = /\w[\w+.-]*:\/\/\S+/g;
+  let url;
+  while ((url = urlPattern.exec(parsed.plain)) !== null) { mark(url.index, url.index + url[0].length); }
   let hasBodyText = false;
   for (let i = 0; i < parsed.plain.length && !hasBodyText; i += 1) {
     hasBodyText = !styled[i] && parsed.plain[i].trim().length > 0;
@@ -2768,6 +2776,10 @@ function stateReadBackProblems(intendedMarkdown, storedPlain, previousMarkdown) 
   // Keys compare unescaped: a read returns "slip_count" as "slip\_count".
   const keyOf = k => trim(unescapeMarkdownText(k));
   Object.keys(stored).forEach(k => { got[keyOf(k)] = trim(stored[k]); });
+
+  // A write that removes the block on purpose (task-state --clear, or --clear-key on
+  // the last key) has no block to check; the full-text read-back still runs.
+  if (!intended.hasBlock) { return []; }
 
   // Prose that merely mentions the sentinel is not a state block; nothing to check.
   // Only when the previous note had no real block either: a write that turns a real

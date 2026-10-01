@@ -2203,6 +2203,8 @@ for (const v of ["Some_Field__c", "C:\\x", "https://example.com/a_b", "plain"]) 
 for (const v of ["!cp *.md *.txt /tmp", "use `make`", "**bold**", "[a](https://x.com)"]) {
   if (stateReadBackProblems(note(v), stored(note(v))).length === 0) fails.push("missed altered value " + JSON.stringify(v));
 }
+// Removing the block on purpose (task-state --clear) is not a malformed block.
+if (stateReadBackProblems("prose", "prose", note("1")).length) fails.push("clearing the block was flagged");
 // A preserved block re-written from its escaped read form must still verify clean.
 const reread = escapeMarkdownText(stored(note("Some_Field__c")));
 if (stateReadBackProblems(reread, stored(reread), reread).length) fails.push("re-writing an escaped block was flagged");
