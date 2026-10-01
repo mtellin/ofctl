@@ -936,7 +936,7 @@ enum OmniJavaScript {
 
           const resultTasks = resolvedTasks.map(task => {
             if (input.name !== null) { task.name = input.name; }
-            if (input.note !== null) { setMarkdownNote(task, input.noteReplaceAll ? input.note : noteWithPreservedState(noteTextToMarkdown(task.noteText), input.note)); }
+            if (input.note !== null) { setMarkdownNoteVerified(task, input.noteReplaceAll ? input.note : noteWithPreservedState(noteTextToMarkdown(task.noteText), input.note)); }
             if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
             if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
             if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
@@ -2085,7 +2085,7 @@ enum OmniJavaScript {
             }, null, 2);
           }
 
-          setMarkdownNote(project, newMarkdown);
+          setMarkdownNoteVerified(project, newMarkdown);
 
           return JSON.stringify({
             project: { id: project.id.primaryKey, name: project.name, note: newMarkdown },
@@ -2181,7 +2181,7 @@ enum OmniJavaScript {
             }, null, 2);
           }
 
-          setMarkdownNote(target, newMarkdown);
+          setMarkdownNoteVerified(target, newMarkdown);
 
           return JSON.stringify({
             id: target.id.primaryKey,
@@ -2434,39 +2434,60 @@ function markdownRuns(markdown) {
   return { plain, runs };
 }
 
-function textRangeForOffsets(textObj, start, end) {
-  const characters = textObj.characters;
-  if (start >= end || start >= characters.length) { return null; }
-  const startPosition = characters[start].range.start;
-  const endPosition = end >= characters.length ? textObj.range.end : characters[end].range.start;
-  return new Text.Range(startPosition, endPosition);
-}
-
+// Build the styled note piece by piece and assign it in one step. Setting
+// task.note and then styling task.noteText is unsafe: once a script has read
+// task.noteText (every note edit reads the old note first), OmniFocus returns that
+// cached pre-write object, and styling it writes the OLD text back over the new
+// note, silently (measured live 2026-10-01).
+//
+// Pieces start from the old note's base style, which is its first character's
+// style. Attributes that would carry a bold/italic/code/heading first character
+// onto plain text are reset to their defaults; the font family and size are
+// otherwise kept, so the user's note font is not replaced.
 function setMarkdownNote(task, markdown) {
   const parsed = markdownRuns(markdown || "");
-  task.note = parsed.plain;
-  const noteObj = task.noteText;
+  const A = Style.Attribute;
+  const base = task.noteText.style;
+  const leaks = [];
+  if (base.get(A.FontWeight) >= 7) {
+    leaks.push(A.FontWeight);
+    if (base.get(A.FontSize) !== A.FontSize.defaultValue) { leaks.push(A.FontSize); }
+  }
+  if (base.get(A.FontItalic)) { leaks.push(A.FontItalic); }
+  if (base.get(A.FontFixedPitch)) { leaks.push(A.FontFixedPitch, A.FontFamily); }
 
-  parsed.runs.forEach(run => {
-    const range = textRangeForOffsets(noteObj, run.start, run.end);
-    if (!range) { return; }
-    const style = noteObj.styleForRange(range);
+  const cuts = new Set([0, parsed.plain.length]);
+  parsed.runs.forEach(run => { cuts.add(run.start); cuts.add(run.end); });
+  const points = Array.from(cuts).sort((a, b) => a - b);
 
-    if (run.style.bold) {
-      style.set(Style.Attribute.FontWeight, 9);
-    }
-    if (run.style.italic) {
-      style.set(Style.Attribute.FontItalic, true);
-    }
-    if (run.style.code) {
-      style.set(Style.Attribute.FontFamily, "Menlo");
-      style.set(Style.Attribute.FontFixedPitch, true);
-    }
-    if (run.style.heading) {
-      style.set(Style.Attribute.FontWeight, 9);
-      style.set(Style.Attribute.FontSize, run.style.heading === 1 ? 20 : (run.style.heading === 2 ? 17 : 15));
-    }
-  });
+  const whole = new Text("", base);
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const start = points[i];
+    const end = points[i + 1];
+    if (start >= end) { continue; }
+    const piece = new Text(parsed.plain.slice(start, end), base);
+    const style = piece.style;
+    leaks.forEach(attribute => style.set(attribute, attribute.defaultValue));
+
+    parsed.runs.filter(run => run.start <= start && run.end >= end).forEach(run => {
+      if (run.style.bold) {
+        style.set(A.FontWeight, 9);
+      }
+      if (run.style.italic) {
+        style.set(A.FontItalic, true);
+      }
+      if (run.style.code) {
+        style.set(A.FontFamily, "Menlo");
+        style.set(A.FontFixedPitch, true);
+      }
+      if (run.style.heading) {
+        style.set(A.FontWeight, 9);
+        style.set(A.FontSize, run.style.heading === 1 ? 20 : (run.style.heading === 2 ? 17 : 15));
+      }
+    });
+    whole.append(piece);
+  }
+  task.noteText = whole;
 }
 
 function noteTextToMarkdown(noteObj) {
@@ -2597,6 +2618,50 @@ function noteWithPreservedState(existingMarkdown, text) {
   const parsed = parseStateBlock(existingMarkdown || "");
   if (!parsed.hasBlock) { return incoming.replace(/\s+$/, ""); }
   return composeStateNote(incoming, parsed.state, parsed.order);
+}
+
+// Post-write read-back. A note is written as markdown, so a state value holding
+// literal * ` ** or [text](url) is parsed as markup and stored altered, and the
+// write still reported success. Compare the state block that was meant to be
+// written with the plain text OmniFocus actually stored. The intended side is
+// markdown (values a read escaped, like "Some\_Field", are unescaped first); the
+// stored side is task.note, because noteTextToMarkdown(noteText) read in the same
+// script as the write can miss the newest line (measured live 2026-10-01).
+function stateReadBackProblems(intendedMarkdown, storedPlain) {
+  const canonical = (state, unescape) => {
+    const out = {};
+    const norm = v => (unescape ? unescapeMarkdownText(v || "") : (v || "")).replace(/\s+$/, "");
+    Object.keys(state).forEach(k => { out[norm(k)] = norm(state[k]); });
+    return out;
+  };
+  const intended = parseStateBlock(intendedMarkdown);
+  const want = canonical(intended.state, true);
+  const got = canonical(parseStateBlock(storedPlain).state, false);
+  const problems = [];
+  if (intended.order.length > 0 && !hasWellFormedStateBlock(storedPlain)) {
+    problems.push("state block is no longer well-formed");
+  }
+  Object.keys(want).forEach(k => {
+    if (got[k] !== want[k]) { problems.push(k + ": wrote " + JSON.stringify(want[k]) + ", stored " + JSON.stringify(got[k])); }
+  });
+  Object.keys(got).forEach(k => {
+    if (!Object.prototype.hasOwnProperty.call(want, k)) { problems.push(k + ": unexpected key stored"); }
+  });
+  return problems;
+}
+
+// Write the note, read it back, and on any mismatch (text not persisted, or state
+// altered) restore the previous note and fail loudly instead of reporting success.
+function setMarkdownNoteVerified(target, markdown) {
+  const before = noteTextToMarkdown(target.noteText);
+  setMarkdownNote(target, markdown);
+  const problems = stateReadBackProblems(markdown, target.note);
+  if (target.note !== markdownRuns(markdown || "").plain) { problems.unshift("note text did not persist"); }
+  if (problems.length === 0) { return; }
+  setMarkdownNote(target, before);
+  throw new Error("Note write failed read-back verification on " + target.id.primaryKey +
+    "; the previous note was restored. " + problems.join("; ") +
+    ". Literal * ` ** and [text](url) in a state value are parsed as markdown and cannot be stored as written.");
 }
 """#
 

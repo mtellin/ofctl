@@ -2162,6 +2162,86 @@ console.log("ok");
     #expect(try OmniJavaScript.updateTask(raw).contains("noteReplaceAll: true"))
 }
 
+// Regression: a state value with literal * was stored with the asterisks stripped
+// ("!cp *.md *.txt" -> "!cp .md .txt", measured live 2026-10-01) and the write
+// reported success. stateReadBackProblems must flag that, while values that the
+// read path merely escapes (_ \) must not be reported as changed. OmniFocus storage
+// is simulated as markdownRuns(...).plain, which is what task.note returns.
+@Test func stateReadBackFlagsAlteredValuesUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let source = thisFile
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+    let lines = try String(contentsOf: source, encoding: .utf8).components(separatedBy: "\n")
+    func extract(_ name: String) throws -> String {
+        guard let open = lines.firstIndex(where: { $0.contains("private let \(name) = #\"\"\"") }) else {
+            throw ExtractionError.missing(name)
+        }
+        guard let close = lines[(open + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "\"\"\"#" }) else {
+            throw ExtractionError.unterminated(name)
+        }
+        return lines[(open + 1)..<close].joined(separator: "\n")
+    }
+    let js = try extract("markdownNoteSupport") + "\n" + (try extract("stateBlockSupport"))
+
+    let harness = #"""
+
+const stored = md => markdownRuns(md).plain;
+const fails = [];
+const note = v => "prose\n\n=== ofctl-state ===\nslips: 2\nvalue: " + v;
+
+for (const v of ["Some_Field__c", "C:\\x", "https://example.com/a_b", "plain"]) {
+  const p = stateReadBackProblems(note(v), stored(note(v)));
+  if (p.length) fails.push("false positive for " + JSON.stringify(v) + ": " + p.join("; "));
+}
+for (const v of ["!cp *.md *.txt /tmp", "use `make`", "**bold**", "[a](https://x.com)"]) {
+  if (stateReadBackProblems(note(v), stored(note(v))).length === 0) fails.push("missed altered value " + JSON.stringify(v));
+}
+// A preserved block re-written from its escaped read form must still verify clean.
+const reread = escapeMarkdownText(stored(note("Some_Field__c")));
+if (stateReadBackProblems(reread, stored(reread)).length) fails.push("re-writing an escaped block was flagged");
+// A destroyed block and a dropped key are both reported.
+if (!stateReadBackProblems(note("x"), "prose").length) fails.push("missing block not reported");
+if (!stateReadBackProblems(note("x"), "prose\n\n=== ofctl-state ===\nslips: 2").length) fails.push("dropped key not reported");
+// Prose-only writes with no state block have nothing to verify.
+if (stateReadBackProblems("just *prose*", "just prose").length) fails.push("prose-only write was flagged");
+
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-readback-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "state read-back check misjudged a write:\n\(stderr)")
+}
+
+@Test func noteWriteScriptsVerifyTheStateBlockAfterWriting() throws {
+    var update = defaultUpdateTask()
+    update.note = "some prose"
+    #expect(try OmniJavaScript.updateTask(update).contains("setMarkdownNoteVerified(task,"))
+}
+
 enum ExtractionError: Error { case missing(String), unterminated(String) }
 
 @Test func parsesUpdateNoteReplaceAll() throws {

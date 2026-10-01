@@ -285,6 +285,11 @@ ofctl task-state "$TASK_ID" --clear-key why
 ofctl project-state "$PROJECT_NAME" --set priority=P2 --set last-reviewed=2026-06-24
 ```
 
+Note writes are verified by reading them back. A non-zero exit reading `Note write
+failed read-back verification` means nothing changed (the previous note was
+restored); rephrase the value without `*`, backticks, `**` or `[text](url)`
+rather than retrying it as-is.
+
 Read and edit a project's freeform note without disturbing its state block (the
 `project-note` freeform edit and the `project-state` block edit are independent
 and compose safely):

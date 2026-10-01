@@ -1160,6 +1160,13 @@ why: committed in sync; blocks the ADR
 > common in URLs and Salesforce field names such as `Some_Field__c` — are escaped
 > on read and unescaped on write symmetrically, so they neither accumulate
 > backslashes nor drift no matter how many times the state block is updated.
+>
+> **Every note write is read back.** After `update --note`, `project-note`,
+> `task-state` and `project-state` write a note, `ofctl` reads it back. If the text
+> did not persist, or any state value was stored differently from what was written
+> (literal `*`, backticks, `**` or `[text](url)` in a value are parsed as markdown
+> and altered), the previous note is restored and the command exits non-zero with
+> the key, the value written and the value stored.
 
 ```sh
 ofctl task-state TASK_ID (--get | [--set KEY=VALUE ...] [--increment KEY ...] [--clear-key KEY ...] | --clear) [--format json|text] [--dry-run]
