@@ -2345,6 +2345,12 @@ const literalWrite = markdownRuns(literal);
 expectEq("literal hashes written", literalWrite.plain, "intro\n# not a heading\n## nor this\nmid # stays");
 if (literalWrite.runs.some(r => r.style.heading)) { fails.push("escaped # parsed as a heading"); }
 expectEq("run starting mid-line", noteTextToMarkdown(note([["a", { italic: true }], ["# b", {}]])), "*a*# b");
+// A heading-only note has no body text, so a blank line's size must not stand in
+// for the body size: the fixed sizes apply.
+expectEq("heading-only note", noteTextToMarkdown(note([["T\n", bold(20)], ["\n", { size: 15 }], ["S", bold(15)]])), "# T\n\n### S");
+// The placeholder must not swallow a private-use character already in the note.
+expectEq("U+E000 kept", markdownRuns("x\n\uE000 y").plain, "x\n\uE000 y");
+expectEq("U+E000 kept beside an escape", markdownRuns("\uE000\n\\# y").plain, "\uE000\n# y");
 // A literal backslash before a hash still round-trips as text.
 expectEq("literal backslash-hash", markdownRuns(noteTextToMarkdown(note([["\\# x", {}]]))).plain, "\\# x");
 

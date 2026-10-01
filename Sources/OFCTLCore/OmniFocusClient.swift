@@ -2426,7 +2426,12 @@ function markdownRuns(markdown) {
   let plain = "";
   // A backslash and "#" at the start of a line is a literal "#", not a heading marker. Hold it as
   // a one-character placeholder until headings are parsed, so offsets stay put.
-  markdown = (markdown || "").replace(/(^|\n)\\[#](?=#{0,2} )/g, "$1\uE000");
+  // The placeholder is a private-use character the note does not already contain.
+  markdown = markdown || "";
+  let hold = 0xE000;
+  while (markdown.indexOf(String.fromCharCode(hold)) !== -1) { hold += 1; }
+  const placeholder = String.fromCharCode(hold);
+  markdown = markdown.replace(/(^|\n)\\[#](?=#{0,2} )/g, "$1" + placeholder);
   // Opening delimiters are guarded with (?<!\\) so an *escaped* delimiter is not
   // treated as a token. On read, escapeMarkdownText backslash-escapes literal
   // * ** ` [ ] in note text; those escaped forms must fall through to
@@ -2493,7 +2498,7 @@ function markdownRuns(markdown) {
     headingPattern.lastIndex -= removed;
   }
 
-  plain = plain.replace(/\uE000/g, "#");
+  plain = plain.split(placeholder).join("#");
   return { plain, runs };
 }
 
@@ -2508,7 +2513,9 @@ function markdownRuns(markdown) {
 // formatted first character (an auto-linked URL, an italic word) spreads over the
 // new note. OmniJS cannot construct a neutral Style, so when the old note has no
 // unformatted stretch the text is written plain, without styling.
-function cleanNoteStyle(noteObj) {
+// requireText skips whitespace-only runs: a blank line says nothing about the
+// body size, and the heading read needs the size of real body text.
+function cleanNoteStyle(noteObj, requireText) {
   const A = Style.Attribute;
   // Enum values come back as fresh proxies, so === never matches; compare their
   // string forms instead (measured live 2026-10-01).
@@ -2529,7 +2536,9 @@ function cleanNoteStyle(noteObj) {
   noteObj.ranges(TextComponent.AttributeRuns).forEach(range => {
     const style = noteObj.styleForRange(range);
     if (!isClean(style)) { return; }
-    const length = noteObj.textInRange(range).string.length;
+    const text = noteObj.textInRange(range).string;
+    if (requireText && text.trim().length === 0) { return; }
+    const length = text.length;
     if (length > bestLength) { best = style; bestLength = length; }
   });
   return best;
@@ -2543,7 +2552,17 @@ function setMarkdownNote(task, markdown) {
     task.note = parsed.plain;
     return;
   }
-  const baseSize = base.get(A.FontSize) || 13;
+  // A note with no plain text has no body size to read headings against, so its
+  // headings use the fixed 13pt-based sizes, which the read falls back to.
+  const styled = new Array(parsed.plain.length).fill(false);
+  parsed.runs.forEach(run => {
+    for (let i = run.start; i < run.end; i += 1) { styled[i] = true; }
+  });
+  let hasBodyText = false;
+  for (let i = 0; i < parsed.plain.length && !hasBodyText; i += 1) {
+    hasBodyText = !styled[i] && parsed.plain[i].trim().length > 0;
+  }
+  const baseSize = hasBodyText ? (base.get(A.FontSize) || 13) : 13;
 
   const cuts = new Set([0, parsed.plain.length]);
   parsed.runs.forEach(run => { cuts.add(run.start); cuts.add(run.end); });
@@ -2583,7 +2602,7 @@ function noteTextToMarkdown(noteObj) {
 
   const ranges = noteObj.ranges(TextComponent.AttributeRuns);
   const full = noteObj.string;
-  const base = cleanNoteStyle(noteObj);
+  const base = cleanNoteStyle(noteObj, true);
   const baseSize = base ? base.get(Style.Attribute.FontSize) : null;
   let offset = 0;
   const markdown = ranges.map(range => {
