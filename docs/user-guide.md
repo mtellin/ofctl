@@ -1148,10 +1148,11 @@ last-planned: 2026-06-23
 why: committed in sync; blocks the ADR
 ```
 
-> **Why `=== ofctl-state ===` and not a `###` heading?** `ofctl` strips
-> markdown heading markers when writing a note but does not re-emit them when
-> reading, so a heading sentinel would not survive the round trip. The `===`
-> sentinel contains no markdown-special characters and round-trips verbatim.
+> **Why `=== ofctl-state ===` and not a `###` heading?** `ofctl` turns
+> markdown heading markers into heading-sized bold text when writing a note and
+> re-emits them on read only from that font size, so a heading sentinel would
+> depend on the styling surviving. The `===` sentinel contains no
+> markdown-special characters and round-trips verbatim.
 
 > **Freeform notes round-trip losslessly.** Each `--set` / `--increment` /
 > `--clear-key` rewrites the whole note (freeform region plus state block), so

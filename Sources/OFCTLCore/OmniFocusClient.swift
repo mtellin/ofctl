@@ -555,6 +555,7 @@ enum OmniJavaScript {
         return """
         (() => {
           \(markdownNoteSupport)
+          \(stateBlockSupport)
           \(privacy)
           \(taskSerializationSupport)
           \(folderSupport)
@@ -708,11 +709,31 @@ enum OmniJavaScript {
             }, null, 2);
           }
 
+          // Refuse, before anything is created, a note whose state values would be
+          // stored altered.
+          const note = input.note || "";
+          const plannedProblems = stateReadBackProblems(note, markdownRuns(note).plain, "");
+          if (plannedProblems.length > 0) {
+            throw new Error("Task not created; nothing was changed. " + plannedProblems.join("; ") + ". " + NOTE_MARKUP_HINT);
+          }
+
           const projectResult = projectNamedOrCreated(input.project);
           const project = projectResult.project;
           const insertion = parentTask ? parentTask.ending : (project ? project.ending : inbox.ending);
           const task = new Task(input.name, insertion);
-          setMarkdownNote(task, input.note || "");
+          setMarkdownNote(task, note);
+          // Read the note back. A new task has no previous note to restore, so a
+          // failed write removes the task (and a project created for it) instead.
+          const lf = v => (v || "").replace(/\\r\\n?/g, "\\n");
+          const storedProblems = stateReadBackProblems(note, task.note, "");
+          if (lf(task.note) !== lf(markdownRuns(note).plain)) { storedProblems.unshift("note text did not persist"); }
+          if (storedProblems.length > 0) {
+            deleteObject(task);
+            if (projectResult.created) { deleteObject(project); }
+            throw new Error("Task not created: its note failed read-back verification, so the new task" +
+              (projectResult.created ? " and the project created for it were" : " was") + " removed. " +
+              storedProblems.join("; ") + ". " + NOTE_MARKUP_HINT);
+          }
           task.deferDate = parsedDeferDate;
           task.plannedDate = parsedPlannedDate;
           task.dueDate = parsedDueDate;
@@ -2463,14 +2484,29 @@ function markdownRuns(markdown) {
 // unformatted stretch the text is written plain, without styling.
 function cleanNoteStyle(noteObj) {
   const A = Style.Attribute;
+  // Enum values come back as fresh proxies, so === never matches; compare their
+  // string forms instead (measured live 2026-10-01).
+  const none = String(UnderlineStyle.None);
   const isClean = style => {
     const link = style.get(A.Link);
+    const background = style.get(A.BackgroundColor);
     return !(link && link.string && link.string.length > 0) &&
-      !(style.get(A.FontWeight) >= 7) && !style.get(A.FontItalic) && !style.get(A.FontFixedPitch);
+      !(style.get(A.FontWeight) >= 7) && !style.get(A.FontItalic) && !style.get(A.FontFixedPitch) &&
+      String(style.get(A.UnderlineStyle)) === none && String(style.get(A.StrikethroughStyle)) === none &&
+      !(background && background.alpha > 0);
   };
   if (noteObj.range.isEmpty) { return isClean(noteObj.style) ? noteObj.style : null; }
-  const run = noteObj.ranges(TextComponent.AttributeRuns).find(range => isClean(noteObj.styleForRange(range)));
-  return run ? noteObj.styleForRange(run) : null;
+  // Of the unformatted runs, take the one covering the most text: that is the
+  // note's body style. The first one may be a short run in its own size or colour.
+  let best = null;
+  let bestLength = -1;
+  noteObj.ranges(TextComponent.AttributeRuns).forEach(range => {
+    const style = noteObj.styleForRange(range);
+    if (!isClean(style)) { return; }
+    const length = noteObj.textInRange(range).string.length;
+    if (length > bestLength) { best = style; bestLength = length; }
+  });
+  return best;
 }
 
 function setMarkdownNote(task, markdown) {
@@ -2519,8 +2555,14 @@ function noteTextToMarkdown(noteObj) {
   if (!noteObj || noteObj.range.isEmpty) { return ""; }
 
   const ranges = noteObj.ranges(TextComponent.AttributeRuns);
+  const full = noteObj.string;
+  const base = cleanNoteStyle(noteObj);
+  const baseSize = base ? base.get(Style.Attribute.FontSize) : null;
+  let offset = 0;
   const markdown = ranges.map(range => {
     const raw = noteObj.textInRange(range).string;
+    const start = offset;
+    offset += raw.length;
     const style = noteObj.styleForRange(range);
     const link = style.get(Style.Attribute.Link);
     const fontWeight = style.get(Style.Attribute.FontWeight);
@@ -2537,6 +2579,19 @@ function noteTextToMarkdown(noteObj) {
     }
     if (fontWeight >= 7) {
       text = wrapMarkdownRun(raw, "**", "**");
+      // A whole bold line in a heading size that setMarkdownNote writes (and not
+      // the body size) reads back as that heading, so "# Title" survives the
+      // round trip instead of turning into **Title**. OmniFocus gives a line's
+      // newline the line's style, so the run usually ends in "\n".
+      const level = { 20: 1, 17: 2, 15: 3 }[style.get(Style.Attribute.FontSize)];
+      const line = raw.replace(/\n+$/, "");
+      const breaks = raw.slice(line.length);
+      const wholeLine = (start === 0 || full[start - 1] === "\n") &&
+        (breaks.length > 0 || offset === full.length || full[offset] === "\n");
+      if (level && style.get(Style.Attribute.FontSize) !== baseSize && wholeLine && !fontItalic && !fixedPitch &&
+          line.trim().length > 0 && line.indexOf("\n") === -1) {
+        text = "#".repeat(level) + " " + escapeMarkdownText(line) + breaks;
+      }
     }
     if (link && link.string && link.string.length > 0) {
       // Emit a bare URL when the visible text is itself a URL. OmniFocus
@@ -2560,9 +2615,9 @@ function noteTextToMarkdown(noteObj) {
 
 // Helpers for the note state block: a delimited key/value section at the end
 // of a task or project note. The marker is intentionally NOT a markdown heading
-// ("### ...") because markdownRuns() strips heading markers on write while
-// noteTextToMarkdown() never re-emits them on read — a heading marker would not
-// survive the round trip. "=== ofctl-state ===" contains no characters that the
+// ("### ...") because markdownRuns() strips heading markers on write and
+// noteTextToMarkdown() re-emits them only from font size and weight — a marker
+// would depend on that styling surviving. "=== ofctl-state ===" contains no characters that the
 // markdown converters interpret, so it round-trips verbatim.
 private let stateBlockSupport = #"""
 const STATE_MARKER = "=== ofctl-state ===";

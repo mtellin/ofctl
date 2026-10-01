@@ -290,6 +290,8 @@ means a new state value would have been altered: rephrase it without `*`,
 backticks, `**` or `[text](url)` rather than retrying as-is. `Note write failed
 read-back verification` means the text did not persist; the message says whether
 the previous note was restored, and if it could not be confirmed, check the note.
+`ofctl add --note` runs the same checks: a refused note creates nothing, and a
+note that fails read-back removes the new task (and any project created for it).
 
 Read and edit a project's freeform note without disturbing its state block (the
 `project-note` freeform edit and the `project-state` block edit are independent

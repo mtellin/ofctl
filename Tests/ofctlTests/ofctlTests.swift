@@ -2269,6 +2269,110 @@ console.log("ok");
     var update = defaultUpdateTask()
     update.note = "some prose"
     #expect(try OmniJavaScript.updateTask(update).contains("setMarkdownNoteVerified(task,"))
+
+    let addScript = try OmniJavaScript.addTask(defaultAddTask())
+    #expect(addScript.contains("stateReadBackProblems(note, markdownRuns(note).plain"))
+    #expect(addScript.contains("stateReadBackProblems(note, task.note"))
+    #expect(addScript.contains("deleteObject(task)"))
+}
+
+// noteTextToMarkdown and cleanNoteStyle read OmniFocus styled text, so this runs
+// them under Node against a fake note: heading-styled lines must read back as
+// "#" markers, and the base style must be the dominant plain run, not the first.
+@Test func styledNoteReadsBackHeadingsAndBaseStyleUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let repoRoot = thisFile
+        .deletingLastPathComponent()   // ofctlTests/
+        .deletingLastPathComponent()   // Tests/
+        .deletingLastPathComponent()   // repo root
+    let source = repoRoot.appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+
+    let text = try String(contentsOf: source, encoding: .utf8)
+    let lines = text.components(separatedBy: "\n")
+    guard let open = lines.firstIndex(where: { $0.contains("private let markdownNoteSupport = #\"\"\"") }) else {
+        Issue.record("could not locate markdownNoteSupport block in \(source.path)")
+        return
+    }
+    var close = -1
+    for i in (open + 1)..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "\"\"\"#" {
+        close = i
+        break
+    }
+    #expect(close > open)
+    let js = lines[(open + 1)..<close].joined(separator: "\n")
+
+    let harness = #"""
+
+const Style = { Attribute: { Link: "link", FontWeight: "weight", FontItalic: "italic", FontFixedPitch: "fixed",
+  FontSize: "size", UnderlineStyle: "underline", StrikethroughStyle: "strike", BackgroundColor: "background" } };
+// Fresh object per read, like the OmniJS proxies: only the string form compares.
+const enumValue = name => ({ toString: () => "[object UnderlineStyle: " + name + "]" });
+const UnderlineStyle = { None: enumValue("None") };
+const TextComponent = { AttributeRuns: "runs" };
+function style(attrs) {
+  const values = Object.assign({ weight: 5, size: 13, italic: false, fixed: false, link: null,
+    underline: enumValue("None"), strike: enumValue("None"), background: { alpha: 0 } }, attrs);
+  return { get: key => values[key] };
+}
+function note(parts) {
+  const string = parts.map(p => p[0]).join("");
+  return { string, range: { isEmpty: string.length === 0 }, style: style(parts.length ? parts[0][1] : {}),
+    ranges: () => parts.map((p, i) => i), textInRange: i => ({ string: parts[i][0] }), styleForRange: i => style(parts[i][1]) };
+}
+
+const fails = [];
+const expectEq = (label, got, want) => { if (got !== want) fails.push(label + ": got " + JSON.stringify(got) + ", want " + JSON.stringify(want)); };
+
+const bold = size => ({ weight: 9, size });
+expectEq("h1", noteTextToMarkdown(note([["Title", bold(20)], ["\nbody", {}]])), "# Title\nbody");
+// What OmniFocus actually stores: the newline takes the heading line's style.
+expectEq("h1 owns its newline", noteTextToMarkdown(note([["Title\n", bold(20)], ["body", {}]])), "# Title\nbody");
+expectEq("h2", noteTextToMarkdown(note([["Intro", {}], ["\n", {}], ["Part", bold(17)], ["\nbody", {}]])), "Intro\n## Part\nbody");
+expectEq("h3 last line", noteTextToMarkdown(note([["body\n", {}], ["Sub", bold(15)]])), "body\n### Sub");
+expectEq("mid-line bold", noteTextToMarkdown(note([["say ", {}], ["Big", bold(20)], [" more", {}]])), "say **Big** more");
+expectEq("body-size bold", noteTextToMarkdown(note([["Bold", bold(13)], ["\nbody", {}]])), "**Bold**\nbody");
+expectEq("body already heading-sized", noteTextToMarkdown(note([["Head", bold(15)], ["\nbody", { size: 15 }]])), "**Head**\nbody");
+
+// Write -> read -> write keeps the heading and its text.
+const written = markdownRuns("# Title\nbody");
+expectEq("heading plain", written.plain, "Title\nbody");
+if (!written.runs.some(r => r.style.heading === 1)) { fails.push("# Title no longer parses as a heading"); }
+
+const sizeOf = s => s ? s.get("size") : null;
+expectEq("large first run", sizeOf(cleanNoteStyle(note([["Big", { size: 24 }], ["\nthe long body of the note", {}]]))), 13);
+expectEq("highlighted run skipped", sizeOf(cleanNoteStyle(note([["highlighted long long text", { background: { alpha: 1 } }], ["plain", { size: 12 }]]))), 12);
+expectEq("underlined run skipped", sizeOf(cleanNoteStyle(note([["underlined long long text", { underline: enumValue("Single") }], ["plain", { size: 12 }]]))), 12);
+expectEq("struck run skipped", sizeOf(cleanNoteStyle(note([["struck long long text", { strike: enumValue("Single") }], ["plain", { size: 12 }]]))), 12);
+expectEq("no clean run", cleanNoteStyle(note([["all bold", bold(13)]])), null);
+
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-styled-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "styled note read-back wrong:\n\(stderr)")
 }
 
 enum ExtractionError: Error { case missing(String), unterminated(String) }
