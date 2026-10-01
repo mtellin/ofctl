@@ -2565,7 +2565,16 @@ function setMarkdownNote(task, markdown) {
   });
   const urlPattern = /\w[\w+.-]*:\/\/\S+/g;
   let url;
-  while ((url = urlPattern.exec(parsed.plain)) !== null) { mark(url.index, url.index + url[0].length); }
+  while ((url = urlPattern.exec(parsed.plain)) !== null) {
+    // OmniFocus ends a link before trailing punctuation, and before a ")" that
+    // closes an outer bracket, but keeps balanced parentheses: "…/X_(y)" (measured
+    // live 2026-10-01).
+    let text = url[0].replace(/[.,;:!?'"]+$/, "");
+    while (text.endsWith(")") && (text.match(/\(/g) || []).length < (text.match(/\)/g) || []).length) {
+      text = text.slice(0, -1).replace(/[.,;:!?'"]+$/, "");
+    }
+    mark(url.index, url.index + text.length);
+  }
   let hasBodyText = false;
   for (let i = 0; i < parsed.plain.length && !hasBodyText; i += 1) {
     hasBodyText = !styled[i] && parsed.plain[i].trim().length > 0;
@@ -2779,7 +2788,7 @@ function stateReadBackProblems(intendedMarkdown, storedPlain, previousMarkdown) 
 
   // A write that removes the block on purpose (task-state --clear, or --clear-key on
   // the last key) has no block to check; the full-text read-back still runs.
-  if (!intended.hasBlock) { return []; }
+  if (!intended.hasBlock && !parseStateBlock(lf(storedPlain)).hasBlock) { return []; }
 
   // Prose that merely mentions the sentinel is not a state block; nothing to check.
   // Only when the previous note had no real block either: a write that turns a real
