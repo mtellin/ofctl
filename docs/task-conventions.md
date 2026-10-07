@@ -117,8 +117,13 @@ ofctl add "Water plants" --due "2026-05-22" --repeat-rule "FREQ=WEEKLY;INTERVAL=
 ```
 
 Use `--repeat-method fixed` for a regular fixed schedule that should not drift
-when completed late. Use `--repeat-method due` for "due again after completion"
+when completed late — it is computed from the due date, so the task needs one.
+Use `--repeat-method due` for "due again after completion"
 and `--repeat-method defer` for "defer again after completion."
+
+For a regular schedule with **no due date** (a routine that should just become
+available on a date), anchor it to the defer date instead:
+`--repeat-rule "FREQ=MONTHLY;BYMONTHDAY=2" --repeat-anchor defer --catch-up`.
 
 ## Duration
 

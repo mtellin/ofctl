@@ -297,6 +297,58 @@ import Testing
     ))))
 }
 
+@Test func parsesAddTaskWithRepeatAnchor() throws {
+    let options = try CLI.parse([
+        "ofctl", "add", "Submit expense",
+        "--defer", "2026-11-02",
+        "--repeat-rule", "FREQ=MONTHLY;BYMONTHDAY=2",
+        "--repeat-anchor", "defer",
+        "--catch-up",
+    ])
+
+    guard case .add(let task) = options.command else {
+        Issue.record("expected add command")
+        return
+    }
+    #expect(task.repeatSchedule == nil)
+    #expect(task.repeatAnchor == .defer)
+    #expect(task.catchUp == true)
+    #expect(task.repeatMethod == nil)
+}
+
+@Test func parsesUpdateTaskWithRepeatSchedule() throws {
+    let options = try CLI.parse([
+        "ofctl", "update", "abc123",
+        "--repeat-rule", "FREQ=WEEKLY",
+        "--repeat-schedule", "from-completion",
+        "--repeat-anchor", "planned",
+        "--no-catch-up",
+    ])
+
+    guard case .update(let task) = options.command else {
+        Issue.record("expected update command")
+        return
+    }
+    #expect(task.repeatSchedule == .fromCompletion)
+    #expect(task.repeatAnchor == .planned)
+    #expect(task.catchUp == false)
+}
+
+@Test func rejectsRepeatAnchorWithoutRuleOrWithLegacyMethod() throws {
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "update", "abc123", "--repeat-anchor", "defer"])
+    }
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "add", "X", "--repeat-rule", "FREQ=DAILY", "--repeat-method", "fixed", "--catch-up"])
+    }
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "add", "X", "--repeat-rule", "FREQ=DAILY", "--repeat-anchor", "sometimes"])
+    }
+    #expect(throws: CLIError.self) {
+        _ = try CLI.parse(["ofctl", "update", "abc123", "--repeat-rule", "none", "--repeat-anchor", "defer"])
+    }
+}
+
 @Test func parsesAddTaskToActionGroup() throws {
     let options = try CLI.parse([
         "ofctl", "add", "Draft proposal",
@@ -1723,7 +1775,11 @@ import Testing
 
     #expect(addScript.contains("task.repetitionRule = parsedRepetitionRule;"))
     #expect(addScript.contains("Task.RepetitionMethod.DueDate"))
-    #expect(updateScript.contains("task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod);"))
+    #expect(updateScript.contains("task.repetitionRule = plannedRepetitionRules.get(task.id.primaryKey);"))
+    #expect(updateScript.contains("assertRepeatAnchorDate(rule,"))
+    #expect(addScript.contains("assertRepeatAnchorDate(parsedRepetitionRule,"))
+    #expect(addScript.contains("Task.AnchorDateKey.DeferDate"))
+    #expect(queryScript.contains("anchorDateKey: repeatAnchorName(repetitionRule.anchorDateKey)"))
     #expect(queryScript.contains("repeatRuleMatches(task, repeatRuleFilter)"))
     #expect(queryScript.contains("repeatRule: repetitionRule ? repetitionRule.ruleString : null"))
 }

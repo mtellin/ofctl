@@ -86,6 +86,9 @@ public struct AddTask: Equatable {
     public var dueDate: String?
     public var repeatRule: String?
     public var repeatMethod: RepeatMethod?
+    public var repeatSchedule: RepeatSchedule?
+    public var repeatAnchor: RepeatAnchor?
+    public var catchUp: Bool?
     public var estimatedMinutes: Int?
     public var note: String?
     public var sequential: Bool?
@@ -106,6 +109,9 @@ public struct AddTask: Equatable {
         dueDate: String? = nil,
         repeatRule: String? = nil,
         repeatMethod: RepeatMethod? = nil,
+        repeatSchedule: RepeatSchedule? = nil,
+        repeatAnchor: RepeatAnchor? = nil,
+        catchUp: Bool? = nil,
         estimatedMinutes: Int? = nil,
         note: String? = nil,
         sequential: Bool? = nil,
@@ -125,6 +131,9 @@ public struct AddTask: Equatable {
         self.dueDate = dueDate
         self.repeatRule = repeatRule
         self.repeatMethod = repeatMethod
+        self.repeatSchedule = repeatSchedule
+        self.repeatAnchor = repeatAnchor
+        self.catchUp = catchUp
         self.estimatedMinutes = estimatedMinutes
         self.note = note
         self.sequential = sequential
@@ -148,6 +157,9 @@ public struct UpdateTask: Equatable {
     public var dueDate: String??
     public var repeatRule: String??
     public var repeatMethod: RepeatMethod?
+    public var repeatSchedule: RepeatSchedule? = nil
+    public var repeatAnchor: RepeatAnchor? = nil
+    public var catchUp: Bool? = nil
     public var estimatedMinutes: Int??
     public var note: String?
     /// Write `note` to the whole note field verbatim, including any
@@ -383,6 +395,19 @@ public enum RepeatMethod: String, Equatable {
     case `defer`
 }
 
+/// OmniFocus 4.7+ repetition schedule: repeat on a regular calendar, or from completion.
+public enum RepeatSchedule: String, Equatable {
+    case regularly
+    case fromCompletion = "from-completion"
+}
+
+/// OmniFocus 4.7+ repetition anchor: which date the schedule is computed from.
+public enum RepeatAnchor: String, Equatable {
+    case due
+    case `defer`
+    case planned
+}
+
 public enum CLI {
     public static let help = """
     ofctl - OmniFocus command-line bridge
@@ -391,9 +416,9 @@ public enum CLI {
       ofctl perspectives [--format json|text]
       ofctl task TASK_ID [--include-notes] [--include-children] [--format json|text]
       ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
-      ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run] [--format json|text]
-      ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run] [--format json|text]
-      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--note-replace-all] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
+      ofctl add NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run] [--format json|text]
+      ofctl add-group NAME [--project NAME [--folder FOLDER_PATH]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run] [--format json|text]
+      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--note-replace-all] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
       ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
@@ -433,6 +458,9 @@ public enum CLI {
       Project arguments (--project and the PROJECT_NAME positional on project-* commands) match by exact name across all folders, then fall back to a primary-key id. Pass an id to target one project unambiguously — e.g. a dropped project that shares a name with an active one (name always resolves to the active twin).
       Task --tag values can be leaf names or paths like People/Alex Rivera and Status/Work 💼.
       Repeat rules are ICS RRULE strings such as FREQ=WEEKLY;INTERVAL=1.
+      --repeat-method is the legacy repeat setting: fixed repeats regularly from the due date, due and defer repeat from completion.
+      --repeat-schedule, --repeat-anchor and --catch-up set the OmniFocus 4.7+ options instead (e.g. repeat regularly from the defer date). Any one of them selects this form; unset ones default to regularly, due, and --no-catch-up, so changing one on an existing repeat means passing the rule and every option again. They cannot be combined with --repeat-method.
+      A repeat anchored to the due date is refused on a task with no due date: OmniFocus would invent one on the next occurrence. Anchor such a task to defer instead.
     """
 
     public static func parse(_ arguments: [String]) throws -> CommandLineOptions {
@@ -679,6 +707,22 @@ public enum CLI {
                 task.repeatRule = try parser.value(after: arg)
             case "--repeat-method":
                 task.repeatMethod = try parseRepeatMethod(try parser.value(after: arg))
+            case "--repeat-schedule":
+                let value = try parser.value(after: arg)
+                guard let schedule = RepeatSchedule(rawValue: value) else {
+                    throw CLIError.usage("Unsupported repeat schedule: \(value)")
+                }
+                task.repeatSchedule = schedule
+            case "--repeat-anchor":
+                let value = try parser.value(after: arg)
+                guard let anchor = RepeatAnchor(rawValue: value) else {
+                    throw CLIError.usage("Unsupported repeat anchor: \(value)")
+                }
+                task.repeatAnchor = anchor
+            case "--catch-up":
+                task.catchUp = true
+            case "--no-catch-up":
+                task.catchUp = false
             case "--duration":
                 let value = try parser.value(after: arg)
                 guard let minutes = Int(value), minutes >= 0 else {
@@ -727,6 +771,7 @@ public enum CLI {
         if task.repeatMethod != nil && task.repeatRule == nil {
             throw CLIError.usage("--repeat-method requires --repeat-rule")
         }
+        try validateRepeatOptions(task.repeatRule == nil, task.repeatMethod, task.repeatSchedule, task.repeatAnchor, task.catchUp)
 
         return task
     }
@@ -796,6 +841,22 @@ public enum CLI {
                 task.repeatRule = .some(try nullableValue(after: arg, parser: &parser))
             case "--repeat-method":
                 task.repeatMethod = try parseRepeatMethod(try parser.value(after: arg))
+            case "--repeat-schedule":
+                let value = try parser.value(after: arg)
+                guard let schedule = RepeatSchedule(rawValue: value) else {
+                    throw CLIError.usage("Unsupported repeat schedule: \(value)")
+                }
+                task.repeatSchedule = schedule
+            case "--repeat-anchor":
+                let value = try parser.value(after: arg)
+                guard let anchor = RepeatAnchor(rawValue: value) else {
+                    throw CLIError.usage("Unsupported repeat anchor: \(value)")
+                }
+                task.repeatAnchor = anchor
+            case "--catch-up":
+                task.catchUp = true
+            case "--no-catch-up":
+                task.catchUp = false
             case "--duration":
                 let value = try parser.value(after: arg)
                 if value == "none" {
@@ -861,11 +922,22 @@ public enum CLI {
         if task.repeatMethod != nil && task.repeatRule == nil {
             throw CLIError.usage("--repeat-method requires --repeat-rule")
         }
+        try validateRepeatOptions(task.repeatRule == nil || task.repeatRule == .some(nil), task.repeatMethod, task.repeatSchedule, task.repeatAnchor, task.catchUp)
         if task.folder != nil && task.project == nil {
             throw CLIError.usage("--folder requires --project")
         }
 
         return task
+    }
+
+    private static func validateRepeatOptions(_ noRule: Bool, _ method: RepeatMethod?, _ schedule: RepeatSchedule?, _ anchor: RepeatAnchor?, _ catchUp: Bool?) throws {
+        guard schedule != nil || anchor != nil || catchUp != nil else { return }
+        if noRule {
+            throw CLIError.usage("--repeat-schedule, --repeat-anchor and --catch-up require --repeat-rule RRULE (not none)")
+        }
+        if method != nil {
+            throw CLIError.usage("--repeat-method cannot be combined with --repeat-schedule, --repeat-anchor or --catch-up")
+        }
     }
 
     private static func parseRepeatMethod(_ value: String) throws -> RepeatMethod {

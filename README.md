@@ -329,11 +329,25 @@ under their parent; plain person-looking tags default under `People`, and plain
 
 Recurrence uses OmniFocus repeat rules through ICS RRULE strings. Use
 `--repeat-rule "FREQ=WEEKLY;INTERVAL=1"` to set a repeat, `--repeat-method
-fixed|due|defer` to choose the repeat anchor, `--repeat-rule none` on `update`
+fixed|due|defer` to choose the legacy repeat method, `--repeat-rule none` on `update`
 to clear a repeat, and `tasks --repeat-rule any|none|RRULE` to audit repeating
-or non-repeating tasks. `fixed` is a regular fixed schedule that does not drift
-when completed late; `due` means due again after completion; `defer` means defer
-again after completion.
+or non-repeating tasks. `fixed` is a regular schedule computed from the due date;
+`due` means due again after completion; `defer` means defer again after completion.
+
+For OmniFocus 4.7+ repeat options, use `--repeat-schedule regularly|from-completion`,
+`--repeat-anchor due|defer|planned` and `--catch-up|--no-catch-up` instead of
+`--repeat-method` — e.g. a task that becomes available on the 2nd of every month
+with no due date:
+
+```sh
+ofctl add "Submit expense" --defer 2026-11-02 \
+  --repeat-rule "FREQ=MONTHLY;BYMONTHDAY=2" --repeat-anchor defer --catch-up
+```
+
+A repeat anchored to a date the task does not have (for example `fixed` or
+`--repeat-anchor due` with no `--due`) is refused, because OmniFocus would invent
+that date on the next occurrence. Task output reports `scheduleType`,
+`anchorDateKey` and `catchUpAutomatically` under `repetitionRule`.
 
 Run:
 

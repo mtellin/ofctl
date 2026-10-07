@@ -545,6 +545,9 @@ enum OmniJavaScript {
         let dueDate = try jsonLiteral(task.dueDate)
         let repeatRule = try jsonLiteral(task.repeatRule)
         let repeatMethod = try jsonLiteral(task.repeatMethod?.rawValue)
+        let repeatSchedule = try jsonLiteral(task.repeatSchedule?.rawValue)
+        let repeatAnchor = try jsonLiteral(task.repeatAnchor?.rawValue)
+        let catchUp = task.catchUp.map { $0 ? "true" : "false" } ?? "null"
         let note = try jsonLiteral(task.note)
         let estimatedMinutes = task.estimatedMinutes.map(String.init) ?? "null"
         let sequential = optionalBoolAssignment(task.sequential)
@@ -571,6 +574,9 @@ enum OmniJavaScript {
             dueDate: \(dueDate),
             repeatRule: \(repeatRule),
             repeatMethod: \(repeatMethod),
+            repeatSchedule: \(repeatSchedule),
+            repeatAnchor: \(repeatAnchor),
+            catchUp: \(catchUp),
             estimatedMinutes: \(estimatedMinutes),
             note: \(note),
             sequential: \(sequential),
@@ -609,9 +615,38 @@ enum OmniJavaScript {
             }
           }
 
-          function repetitionRule(ruleString, methodName) {
+          function repetitionRule(ruleString, methodName, schedule, anchor, catchUp) {
             if (!ruleString) { return null; }
+            if (schedule !== null || anchor !== null || catchUp !== null) {
+              return modernRepetitionRule(ruleString, schedule, anchor, catchUp);
+            }
             return new Task.RepetitionRule(ruleString, repetitionMethodNamed(methodName));
+          }
+
+          function modernRepetitionRule(ruleString, schedule, anchor, catchUp) {
+            if (typeof Task.RepetitionScheduleType === "undefined" || typeof Task.AnchorDateKey === "undefined") {
+              throw new Error("--repeat-schedule, --repeat-anchor and --catch-up need OmniFocus 4.7 or later");
+            }
+            const scheduleType = schedule === "from-completion"
+              ? Task.RepetitionScheduleType.FromCompletion
+              : Task.RepetitionScheduleType.Regularly;
+            const anchorKey = { due: Task.AnchorDateKey.DueDate, defer: Task.AnchorDateKey.DeferDate, planned: Task.AnchorDateKey.PlannedDate }[anchor || "due"];
+            return new Task.RepetitionRule(ruleString, null, scheduleType, anchorKey, catchUp === true);
+          }
+
+          // A repeat anchored to a date the task does not have makes OmniFocus invent
+          // that date on the next occurrence (a due-anchored rule with no due date
+          // comes back with a due date and a defer date after it).
+          function assertRepeatAnchorDate(rule, dates, label) {
+            if (!rule || typeof Task.AnchorDateKey === "undefined") { return; }
+            const key = rule.anchorDateKey;
+            const missing = key === Task.AnchorDateKey.DueDate && !dates.due ? "due"
+              : key === Task.AnchorDateKey.DeferDate && !dates.defer ? "defer"
+              : key === Task.AnchorDateKey.PlannedDate && !dates.planned ? "planned"
+              : null;
+            if (missing) {
+              throw new Error(`${label}: its repeat is anchored to the ${missing} date but it has no ${missing} date, so OmniFocus would invent one on the next occurrence. Set --${missing}, or anchor the repeat to a date it has with --repeat-anchor. Nothing was changed.`);
+            }
           }
 
           function existingProjectNamed(name) {
@@ -687,7 +722,8 @@ enum OmniJavaScript {
           const parsedDeferDate = parseDate(input.deferDate);
           const parsedPlannedDate = parseDate(input.plannedDate);
           const parsedDueDate = parseDate(input.dueDate);
-          const parsedRepetitionRule = repetitionRule(input.repeatRule, input.repeatMethod);
+          const parsedRepetitionRule = repetitionRule(input.repeatRule, input.repeatMethod, input.repeatSchedule, input.repeatAnchor, input.catchUp);
+          assertRepeatAnchorDate(parsedRepetitionRule, { due: parsedDueDate, defer: parsedDeferDate, planned: parsedPlannedDate }, "Task not created");
           const dryRunTags = input.tags.map(name => existingTagNamedOrPath(name));
 
           if (input.dryRun) {
@@ -768,6 +804,9 @@ enum OmniJavaScript {
         let dueDate = optionalJSONAssignment(task.dueDate)
         let repeatRule = optionalJSONAssignment(task.repeatRule)
         let repeatMethod = try jsonLiteral(task.repeatMethod?.rawValue)
+        let repeatSchedule = try jsonLiteral(task.repeatSchedule?.rawValue)
+        let repeatAnchor = try jsonLiteral(task.repeatAnchor?.rawValue)
+        let catchUp = task.catchUp.map { $0 ? "true" : "false" } ?? "null"
         let estimatedMinutes = optionalIntAssignment(task.estimatedMinutes)
         let note = try jsonLiteral(task.note)
         let completedAt = try jsonLiteral(task.completedAt)
@@ -797,6 +836,9 @@ enum OmniJavaScript {
             dueDate: \(dueDate),
             repeatRule: \(repeatRule),
             repeatMethod: \(repeatMethod),
+            repeatSchedule: \(repeatSchedule),
+            repeatAnchor: \(repeatAnchor),
+            catchUp: \(catchUp),
             estimatedMinutes: \(estimatedMinutes),
             note: \(note),
             noteReplaceAll: \(task.noteReplaceAll ? "true" : "false"),
@@ -842,9 +884,38 @@ enum OmniJavaScript {
             }
           }
 
-          function repetitionRule(ruleString, methodName) {
+          function repetitionRule(ruleString, methodName, schedule, anchor, catchUp) {
             if (ruleString === null) { return null; }
+            if (schedule !== null || anchor !== null || catchUp !== null) {
+              return modernRepetitionRule(ruleString, schedule, anchor, catchUp);
+            }
             return new Task.RepetitionRule(ruleString, repetitionMethodNamed(methodName));
+          }
+
+          function modernRepetitionRule(ruleString, schedule, anchor, catchUp) {
+            if (typeof Task.RepetitionScheduleType === "undefined" || typeof Task.AnchorDateKey === "undefined") {
+              throw new Error("--repeat-schedule, --repeat-anchor and --catch-up need OmniFocus 4.7 or later");
+            }
+            const scheduleType = schedule === "from-completion"
+              ? Task.RepetitionScheduleType.FromCompletion
+              : Task.RepetitionScheduleType.Regularly;
+            const anchorKey = { due: Task.AnchorDateKey.DueDate, defer: Task.AnchorDateKey.DeferDate, planned: Task.AnchorDateKey.PlannedDate }[anchor || "due"];
+            return new Task.RepetitionRule(ruleString, null, scheduleType, anchorKey, catchUp === true);
+          }
+
+          // A repeat anchored to a date the task does not have makes OmniFocus invent
+          // that date on the next occurrence (a due-anchored rule with no due date
+          // comes back with a due date and a defer date after it).
+          function assertRepeatAnchorDate(rule, dates, label) {
+            if (!rule || typeof Task.AnchorDateKey === "undefined") { return; }
+            const key = rule.anchorDateKey;
+            const missing = key === Task.AnchorDateKey.DueDate && !dates.due ? "due"
+              : key === Task.AnchorDateKey.DeferDate && !dates.defer ? "defer"
+              : key === Task.AnchorDateKey.PlannedDate && !dates.planned ? "planned"
+              : null;
+            if (missing) {
+              throw new Error(`${label}: its repeat is anchored to the ${missing} date but it has no ${missing} date, so OmniFocus would invent one on the next occurrence. Set --${missing}, or anchor the repeat to a date it has with --repeat-anchor. Nothing was changed.`);
+            }
           }
 
           function existingTagNamed(name) {
@@ -918,6 +989,23 @@ enum OmniJavaScript {
           const dryRunAddTags = input.addTags.map(name => existingTagNamedOrPath(name));
           const dryRunRemoveTags = input.removeTags.map(name => existingTagNamedOrPath(name));
 
+          // Only a new rule or a cleared date can create a missing anchor date, so
+          // ordinary date moves on an already-mismatched task are not blocked here.
+          const plannedRepetitionRules = new Map();
+          if (input.repeatRule !== undefined || input.dueDate === null || input.deferDate === null || input.plannedDate === null) {
+            resolvedTasks.forEach(task => {
+              const rule = input.repeatRule !== undefined
+                ? repetitionRule(input.repeatRule, input.repeatMethod, input.repeatSchedule, input.repeatAnchor, input.catchUp)
+                : task.repetitionRule;
+              plannedRepetitionRules.set(task.id.primaryKey, rule);
+              assertRepeatAnchorDate(rule, {
+                due: input.dueDate !== undefined ? parseDate(input.dueDate) : task.dueDate,
+                defer: input.deferDate !== undefined ? parseDate(input.deferDate) : task.deferDate,
+                planned: input.plannedDate !== undefined ? parseDate(input.plannedDate) : task.plannedDate
+              }, `Task ${task.id.primaryKey} not updated`);
+            });
+          }
+
           if (input.dryRun) {
             return JSON.stringify({
               dryRun: true,
@@ -970,7 +1058,7 @@ enum OmniJavaScript {
             if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
             if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
             if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
-            if (input.repeatRule !== undefined) { task.repetitionRule = repetitionRule(input.repeatRule, input.repeatMethod); }
+            if (input.repeatRule !== undefined) { task.repetitionRule = plannedRepetitionRules.get(task.id.primaryKey); }
             if (input.estimatedMinutes !== undefined) { task.estimatedMinutes = input.estimatedMinutes; }
             if (input.sequential !== undefined) { task.sequential = input.sequential; }
             if (input.completedByChildren !== undefined) { task.completedByChildren = input.completedByChildren; }
@@ -3009,6 +3097,21 @@ function repeatMethodName(method) {
   return String(method);
 }
 
+function repeatScheduleName(scheduleType) {
+  if (!scheduleType || typeof Task.RepetitionScheduleType === "undefined") { return null; }
+  if (scheduleType === Task.RepetitionScheduleType.Regularly) { return "regularly"; }
+  if (scheduleType === Task.RepetitionScheduleType.FromCompletion) { return "from-completion"; }
+  return String(scheduleType);
+}
+
+function repeatAnchorName(key) {
+  if (!key || typeof Task.AnchorDateKey === "undefined") { return null; }
+  if (key === Task.AnchorDateKey.DueDate) { return "due"; }
+  if (key === Task.AnchorDateKey.DeferDate) { return "defer"; }
+  if (key === Task.AnchorDateKey.PlannedDate) { return "planned"; }
+  return String(key);
+}
+
 function pathForTask(task) {
   if (task.inInbox) { return ["Inbox", task.name]; }
   const parts = [];
@@ -3120,7 +3223,10 @@ function serializeTask(task, includeNotes, includeChildren) {
     repeatMethod: repetitionRule ? repeatMethodName(repetitionRule.method) : null,
     repetitionRule: repetitionRule ? {
       ruleString: repetitionRule.ruleString,
-      method: repeatMethodName(repetitionRule.method)
+      method: repeatMethodName(repetitionRule.method),
+      scheduleType: repeatScheduleName(repetitionRule.scheduleType),
+      anchorDateKey: repeatAnchorName(repetitionRule.anchorDateKey),
+      catchUpAutomatically: repetitionRule.catchUpAutomatically === undefined ? null : repetitionRule.catchUpAutomatically
     } : null,
     estimatedMinutes: task.estimatedMinutes,
     parent: task.parent ? {

@@ -320,7 +320,8 @@ Default output is JSON. Task objects include:
 - `effectiveDueDate`
 - `repeatRule`
 - `repeatMethod`
-- `repetitionRule`
+- `repetitionRule` (`ruleString`, `method`, `scheduleType`, `anchorDateKey`,
+  `catchUpAutomatically`)
 - `estimatedMinutes`
 - `parent`
 - `hasChildren`
@@ -449,7 +450,36 @@ ofctl add "Water plants" \
 - `defer`: defer again after completion.
 
 If `--repeat-method` is omitted, `ofctl` uses OmniFocus's fixed repeat method.
-`--repeat-method` must be used with `--repeat-rule`.
+`--repeat-method` must be used with `--repeat-rule`. Note that `fixed` computes
+the schedule from the **due** date.
+
+OmniFocus 4.7+ separates *how* a task repeats from *which date* it repeats from.
+Set those directly instead of `--repeat-method` (the two forms cannot be mixed):
+
+- `--repeat-schedule regularly|from-completion` (default `regularly`)
+- `--repeat-anchor due|defer|planned` (default `due`)
+- `--catch-up` / `--no-catch-up` — whether a late occurrence skips straight to the
+  next future date (default `--no-catch-up`)
+
+Options you leave out reset to their defaults, so to change one (say, turn on
+catch-up) on an existing repeat, pass `--repeat-rule` and every option again.
+
+A task that becomes available on the 2nd of every month and never has a due date:
+
+```sh
+ofctl add "Submit expense" \
+  --defer 2026-11-02 \
+  --repeat-rule "FREQ=MONTHLY;BYMONTHDAY=2" \
+  --repeat-anchor defer \
+  --catch-up
+```
+
+`add` and `update` refuse a repeat anchored to a date the task does not have —
+`fixed` or `--repeat-anchor due` with no due date, or clearing the anchor date
+with `--due none`/`--defer none`/`--planned none`. OmniFocus would otherwise invent
+that date on the next occurrence (a due-anchored rule with no due date comes back
+with a due date *and* a defer date after it). Moving an anchor date to another
+date is never blocked.
 
 Flag a task as the day's top priority:
 

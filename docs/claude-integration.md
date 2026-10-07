@@ -326,8 +326,13 @@ Recurrence is represented as an ICS RRULE string in `repeatRule`. Query repeatin
 tasks with `ofctl tasks --repeat-rule any`, query non-repeating tasks with
 `--repeat-rule none`, and clear recurrence with `ofctl update TASK_ID
 --repeat-rule none`. Use `--repeat-method fixed` for a regular fixed schedule
-that should not drift when completed late. `--repeat-method due` means due again
-after completion, and `--repeat-method defer` means defer again after completion.
+that should not drift when completed late (it is computed from the due date).
+`--repeat-method due` means due again after completion, and `--repeat-method
+defer` means defer again after completion. For a regular schedule with no due
+date, use `--repeat-anchor defer` (plus `--catch-up` if missed occurrences should
+be skipped) instead of `--repeat-method`; check `repetitionRule.anchorDateKey` to
+see what a task's repeat is computed from. ofctl refuses a repeat anchored to a
+date the task does not have.
 
 ## Permission Model
 
