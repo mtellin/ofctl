@@ -292,6 +292,9 @@ read-back verification` means the text did not persist; the message says whether
 the previous note was restored, and if it could not be confirmed, check the note.
 `ofctl add --note` runs the same checks: a refused note creates nothing, and a
 note that fails read-back removes the new task (and any project created for it).
+Auto-linked text (bare domains, phone numbers) and a trailing newline do not
+count as a failed write: the check accepts the stored text in either of the two
+forms OmniFocus reports it (fixed in v0.21.1).
 
 Read and edit a project's freeform note without disturbing its state block (the
 `project-note` freeform edit and the `project-state` block edit are independent

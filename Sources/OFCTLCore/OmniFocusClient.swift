@@ -760,9 +760,8 @@ enum OmniJavaScript {
           setMarkdownNote(task, note);
           // Read the note back. A new task has no previous note to restore, so a
           // failed write removes the task (and a project created for it) instead.
-          const lf = v => (v || "").replace(/\\r\\n?/g, "\\n");
           const storedProblems = stateReadBackProblems(note, task.note, "");
-          if (lf(task.note) !== lf(markdownRuns(note).plain)) { storedProblems.unshift("note text did not persist"); }
+          if (!noteTextPersisted(task, note)) { storedProblems.unshift("note text did not persist"); }
           if (storedProblems.length > 0) {
             deleteObject(task);
             if (projectResult.created) { deleteObject(project); }
@@ -2920,6 +2919,17 @@ function assertNoteStorable(target, markdown, previousMarkdown) {
     problems.join("; ") + ". " + NOTE_MARKUP_HINT);
 }
 
+// Did the note's text persist? Two stored forms count, and trailing whitespace is ignored
+// because OmniFocus drops a trailing newline on write. The plain getter (target.note)
+// renders an auto-linked span as "example.com <http://example.com>" (bare domains, phone
+// numbers), so it never equals the written text; noteText.string carries the text as
+// stored. Either form matching is a persisted write (measured live 2026-10-09).
+function noteTextPersisted(target, markdown) {
+  const norm = v => (v || "").replace(/\r\n?/g, "\n").replace(/\s+$/, "");
+  const want = norm(markdownRuns(markdown || "").plain);
+  return norm(target.note) === want || norm(target.noteText.string) === want;
+}
+
 // Write the note, then read it back. If the text did not persist, restore the
 // previous note, confirm the restore, and fail loudly instead of reporting success.
 function setMarkdownNoteVerified(target, markdown) {
@@ -2934,7 +2944,7 @@ function setMarkdownNoteVerified(target, markdown) {
   setMarkdownNote(target, markdown);
   const lf = v => (v || "").replace(/\r\n?/g, "\n");
   const problems = stateReadBackProblems(markdown, target.note, before);
-  if (lf(target.note) !== lf(markdownRuns(markdown || "").plain)) { problems.unshift("note text did not persist"); }
+  if (!noteTextPersisted(target, markdown)) { problems.unshift("note text did not persist"); }
   if (problems.length === 0) { return; }
   target.noteText = snapshot;
   const restored = lf(target.note) === lf(originalPlain);
