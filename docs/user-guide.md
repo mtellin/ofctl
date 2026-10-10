@@ -313,6 +313,7 @@ Default output is JSON. Task objects include:
 - `plannedDate`
 - `dueDate`
 - `completionDate`
+- `creationDate` (when the task was added to OmniFocus)
 - `effectiveCompletionDate`
 - `effectiveDropDate`
 - `effectiveDeferDate`
