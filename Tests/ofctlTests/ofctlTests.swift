@@ -2824,6 +2824,8 @@ function project(id, name, path, status) {
 }
 function projectFolderNamesForProject(p) { return paths.get(p.id.primaryKey); }
 function folderPath(folder) { return folder; }
+let allowedFolder = null;
+function projectAllowedByPrivacyScope(p) { return allowedFolder === null || paths.get(p.id.primaryKey).includes(allowedFolder); }
 function resolve(name, folder) {
   try { const p = resolveProjectInFolderTree(name, folder, folder.join("/")); return p ? p.id.primaryKey : null; }
   catch (e) { return "error"; }
@@ -2854,6 +2856,13 @@ const fails = cases
   .map(([[name, folder], want]) => [name, folder, want, resolve(name, folder)])
   .filter(([, , want, got]) => want !== got)
   .map(([name, folder, want, got]) => `${name} in ${folder.join("/")}: want ${want}, got ${got}`);
+allowedFolder = "Work";
+flattenedProjects.push(
+  project("privA", "Errands", ["Personal", "Family"]),
+  project("privB", "Errands", ["Personal", "Garden"]),
+);
+const scoped = resolve("Errands", ["Personal"]);
+if (scoped !== null) { fails.push(`out-of-scope projects must not resolve or be named: got ${scoped}`); }
 if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
 console.log("ok");
 """#

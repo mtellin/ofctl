@@ -3163,8 +3163,9 @@ function resolveProjectByNameOrId(name) {
 // Resolve a project by exact name under a folder: one directly in that folder
 // wins, else anywhere in its subfolders, so an ancestor --folder finds a project
 // nested below it instead of forking a duplicate. Dropped and completed projects
-// are skipped so a dead twin never absorbs new tasks; more than one live match
-// at the same level is refused rather than guessed.
+// are skipped so a dead twin never absorbs new tasks, and so are projects outside
+// the privacy scope, so the ambiguity error never names them. More than one live
+// match at the same level is refused rather than guessed.
 function resolveProjectInFolderTree(name, folder, folderLabel) {
   const root = folderPath(folder);
   const isUnderRoot = path => path.length >= root.length && root.every((part, index) => path[index] === part);
@@ -3173,6 +3174,7 @@ function resolveProjectInFolderTree(name, folder, folderLabel) {
       && project.status !== Project.Status.Dropped
       && project.status !== Project.Status.Done
       && isUnderRoot(projectFolderNamesForProject(project))
+      && projectAllowedByPrivacyScope(project)
   ));
   const direct = live.filter(project => projectFolderNamesForProject(project).length === root.length);
   const matches = direct.length > 0 ? direct : live;
