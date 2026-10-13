@@ -399,8 +399,21 @@ Add to a project inside a folder, including a nested folder:
 ofctl add "Ask Taylor about launch date" --project "Work Follow-ups" --folder "Work/Planning"
 ```
 
-When `--folder` is present, `ofctl` targets or creates the named project inside
-that folder path. `--folder` requires `--project`.
+When `--folder` is present, `ofctl` looks for the named project anywhere under
+that folder path, subfolders included, and creates it directly in that folder
+only when nothing matches. So `--folder Work` finds a project living at
+`Work/Planning` instead of creating a second one at the `Work` root. Dropped and
+completed projects are skipped, so a dead twin never receives new tasks. If more
+than one active project of that name sits under the folder, the command fails and
+lists their ids and paths; pass the full folder path to pick one. `--folder`
+requires `--project`.
+
+Require the project to already exist, so a typo fails instead of creating a new
+project (works on `add-group` and `update` too):
+
+```sh
+ofctl add "Ask Taylor about launch date" --project "Work Follow-ups" --folder Work --no-create-project
+```
 
 Add tags:
 
@@ -641,7 +654,8 @@ ofctl update TASK_ID [TASK_ID ...] --project "Work Follow-ups"
 
 If the named project does not exist, `ofctl` creates it before moving the
 task(s). Without a privacy scope it is created as a top-level project. To place
-the new project in a folder, add `--folder` (same semantics as `add --folder`):
+the new project in a folder, add `--folder` (same semantics as `add --folder`,
+including the subfolder search):
 
 ```sh
 ofctl update TASK_ID TASK_ID --project "Q3 Planning" --folder "Work/Planning"

@@ -583,6 +583,7 @@ enum OmniJavaScript {
             completedByChildren: \(completedByChildren),
             flagged: \(flagged),
             actionGroup: \(task.actionGroup ? "true" : "false"),
+            createProjectIfMissing: \(task.createProjectIfMissing ? "true" : "false"),
             dryRun: \(task.dryRun ? "true" : "false")
           };
 
@@ -652,15 +653,7 @@ enum OmniJavaScript {
           function existingProjectNamed(name) {
             if (!name) { return { project: null, created: false }; }
             if (input.folder !== null) {
-              const folder = folderForPath(input.folder);
-              const folderProjectMatches = flattenedProjects.filter(project => (
-                project.name === name && projectFolderNamesForProject(project).join("/") === folderPath(folder).join("/")
-              ));
-              if (folderProjectMatches.length === 1) { return { project: folderProjectMatches[0], created: false }; }
-              if (folderProjectMatches.length > 1) {
-                throw new Error(`Ambiguous project in folder: ${input.folder}/${name}`);
-              }
-              return { project: null, created: false };
+              return { project: resolveProjectInFolderTree(name, folderForPath(input.folder), input.folder), created: false };
             }
             return { project: resolveProjectByNameOrId(name), created: false };
           }
@@ -717,6 +710,9 @@ enum OmniJavaScript {
           }
 
           const dryRunProject = existingProjectNamed(input.project);
+          if (!input.createProjectIfMissing && input.project !== null && !dryRunProject.project) {
+            throw new Error(`Project not found: ${input.project}`);
+          }
           const parentTask = parentTaskNamed(input.parent);
           assertAddDestinationAvailable(dryRunProject, parentTask);
           const parsedDeferDate = parseDate(input.deferDate);
@@ -937,15 +933,7 @@ enum OmniJavaScript {
             // creation destination only — using it to filter resolution would
             // exclude every project living in a subfolder of the allowed folder.
             if (input.folder !== null) {
-              const folder = folderForPath(input.folder);
-              const folderProjectMatches = flattenedProjects.filter(project => (
-                project.name === name && projectFolderNamesForProject(project).join("/") === folderPath(folder).join("/")
-              ));
-              if (folderProjectMatches.length === 1) { return { project: folderProjectMatches[0], created: false }; }
-              if (folderProjectMatches.length > 1) {
-                throw new Error(`Ambiguous project in folder: ${input.folder}/${name}`);
-              }
-              return { project: null, created: false };
+              return { project: resolveProjectInFolderTree(name, folderForPath(input.folder), input.folder), created: false };
             }
             return { project: resolveProjectByNameOrId(name), created: false };
           }
@@ -3170,6 +3158,25 @@ function resolveProjectByNameOrId(name) {
   const byName = flattenedProjects.byName(name);
   if (byName) { return byName; }
   return flattenedProjects.find(project => project.id.primaryKey === name) || null;
+}
+
+// Resolve a project by exact name anywhere under a folder, subfolders included,
+// so an ancestor --folder finds a project nested below it instead of forking a
+// duplicate. Dropped and completed projects are skipped so a dead twin never
+// absorbs new tasks; more than one live match is refused rather than guessed.
+function resolveProjectInFolderTree(name, folder, folderLabel) {
+  const root = folderPath(folder).join("/");
+  const matches = flattenedProjects.filter(project => {
+    if (project.name !== name) { return false; }
+    if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) { return false; }
+    const path = projectFolderNamesForProject(project).join("/");
+    return path === root || path.startsWith(root + "/");
+  });
+  if (matches.length > 1) {
+    const candidates = matches.map(project => `${project.id.primaryKey} (${projectFolderNamesForProject(project).join("/")})`);
+    throw new Error(`Ambiguous project: ${matches.length} projects named "${name}" under ${folderLabel}: ${candidates.join(", ")}. Pass the full --folder path. Nothing was changed.`);
+  }
+  return matches[0] || null;
 }
 
 function projectFolderNamesForTask(task) {

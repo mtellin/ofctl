@@ -261,6 +261,34 @@ import Testing
     ))))
 }
 
+@Test func parsesAddTaskNoCreateProject() throws {
+    let options = try CLI.parse([
+        "ofctl", "add-group", "Plan launch",
+        "--project", "Product Launch",
+        "--folder", "Work",
+        "--no-create-project",
+    ])
+
+    #expect(options == CommandLineOptions(command: .addGroup(AddTask(
+        name: "Plan launch",
+        project: "Product Launch",
+        folder: "Work",
+        sequential: false,
+        completedByChildren: false,
+        actionGroup: true,
+        createProjectIfMissing: false
+    ))))
+}
+
+@Test func rejectsAddTaskNoCreateProjectWithoutProject() throws {
+    do {
+        _ = try CLI.parse(["ofctl", "add", "Plan launch", "--no-create-project"])
+        Issue.record("Expected --no-create-project without --project to fail")
+    } catch let error as CLIError {
+        #expect(error == .usage("--no-create-project requires --project"))
+    }
+}
+
 @Test func rejectsAddTaskFolderWithoutProject() throws {
     do {
         _ = try CLI.parse(["ofctl", "add", "Ask Taylor about launch date", "--folder", "Work"])
@@ -1709,6 +1737,27 @@ import Testing
     #expect(addScript.contains("folder: \"Work\\/Planning\""))
     #expect(addScript.contains("const folder = folderForPath(input.folder);"))
     #expect(addScript.contains("new Project(name, folder.ending)"))
+}
+
+@Test func addAndUpdateResolveFolderProjectsAcrossSubfolders() throws {
+    var add = AddTask(name: "Plan launch", project: "Product Launch", folder: "Work", createProjectIfMissing: false)
+    let addScript = try OmniJavaScript.addTask(add)
+    var update = defaultUpdateTask()
+    update.project = .some("Product Launch")
+    update.folder = "Work"
+    let updateScript = try OmniJavaScript.updateTask(update)
+
+    for script in [addScript, updateScript] {
+        #expect(script.contains("resolveProjectInFolderTree(name, folderForPath(input.folder), input.folder)"))
+        #expect(script.contains("path === root || path.startsWith(root + \"/\")"))
+        #expect(script.contains("project.status === Project.Status.Dropped || project.status === Project.Status.Done"))
+        #expect(script.contains("Ambiguous project: ${matches.length} projects named"))
+    }
+    #expect(addScript.contains("createProjectIfMissing: false"))
+    #expect(addScript.contains("Project not found: ${input.project}"))
+
+    add.createProjectIfMissing = true
+    #expect(try OmniJavaScript.addTask(add).contains("createProjectIfMissing: true"))
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {

@@ -24,7 +24,7 @@ The command surface is intentionally narrow:
 - `tasks` for read workflows
 - `task` for single-task inspection by ID
 - `perspectives` for discovering built-in and custom OmniFocus views
-- `add` for task creation
+- `add` for task creation; pass `--no-create-project` when filing into a project that should already exist, so a mistyped name fails instead of creating a duplicate project
 - `add-group` for action group creation
 - `update` for controlled edits, including moving one or more tasks into a project; `--project` auto-creates a missing project (use `--folder` to place it in a folder, or rely on the single-folder default inside a privacy scope), so a separate `project-create` step is usually unnecessary when moving tasks
 - `task-rename TASK_ID --to NEW_NAME` for task-only renames
@@ -321,6 +321,12 @@ subfolders — and fall back to a primary-key id. Resolution is never a substrin
 match. When a dropped or completed project shares a name with an active one, the
 name resolves to the active twin; pass the twin's id to target it. Prefer id when
 scripting a mutation against a specific project you already looked up.
+
+With `--folder` on `add`, `add-group` and `update`, the name is matched anywhere
+under that folder (an ancestor such as `--folder Work` is enough), skipping dropped
+and completed projects; several active matches are an error listing their ids.
+`meta.createdProject` (or `wouldCreateProject` on `--dry-run`) still reports when a
+new project was made — check it, or pass `--no-create-project`.
 
 Repeated `--tag` filters use AND semantics by default. Use `--tag-mode any`
 when a query should match any listed tag.

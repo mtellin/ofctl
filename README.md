@@ -269,9 +269,12 @@ ofctl project-delete "Home Maintenance"
   flagged state, completion/dropped state, and output format.
 - `ofctl add`: create a task with project and optional folder path, tags,
   defer/planned/due dates, repeat rule, duration, Markdown notes, action group
-  settings, flag state, or a parent action group.
+  settings, flag state, or a parent action group. `--folder` finds the project
+  anywhere under that folder (subfolders included, dropped/completed skipped)
+  before creating one; `--no-create-project` refuses to create one at all.
 - `ofctl add-group`: create an action group, optionally sequential/parallel and
-  optionally completed by its children.
+  optionally completed by its children. Takes the same `--project`, `--folder`
+  and `--no-create-project` options as `add`.
 - `ofctl update`: update one or more tasks by ID — name, project (with optional
   `--folder` to create/target the project in a folder), tags, dates, repeat rule,
   duration, notes, completion state, dropped state, flag state, action group
