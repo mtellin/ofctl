@@ -402,10 +402,12 @@ ofctl add "Ask Taylor about launch date" --project "Work Follow-ups" --folder "W
 When `--folder` is present, `ofctl` looks for the named project anywhere under
 that folder path, subfolders included, and creates it directly in that folder
 only when nothing matches. So `--folder Work` finds a project living at
-`Work/Planning` instead of creating a second one at the `Work` root. Dropped and
-completed projects are skipped, so a dead twin never receives new tasks. If more
-than one active project of that name sits under the folder, the command fails and
-lists their ids and paths; pass the full folder path to pick one. `--folder`
+`Work/Planning` instead of creating a second one at the `Work` root. A project
+directly in the named folder wins over same-named ones in its subfolders. Dropped
+and completed projects are skipped, so a dead twin never receives new tasks. If
+more than one active project of that name sits in subfolders (and none directly in
+the folder), the command fails and lists their ids and paths; pass the `--folder`
+path of the one you mean. `--folder`
 requires `--project`.
 
 Require the project to already exist, so a typo fails instead of creating a new

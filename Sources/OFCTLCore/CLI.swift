@@ -457,7 +457,7 @@ public enum CLI {
       Task date filters support: all, now, today, tomorrow, yesterday, none, before:DATE, after:DATE, on:YYYY-MM-DD.
       DATE can be now, today, tomorrow, yesterday, YYYY-MM-DD, or an ISO-like date/time.
       Task --project values create a top-level project when no project with that name exists; pass --no-create-project on add, add-group or update to require an existing project.
-      Add --folder FOLDER_PATH to create or target a project inside a folder when adding or updating tasks. --folder matches the project anywhere under that folder, subfolders included, skipping dropped and completed projects; more than one match is refused, and a new project is created only when none matches. Within a privacy scope that allows exactly one folder, update creates new projects in that folder automatically.
+      Add --folder FOLDER_PATH to create or target a project inside a folder when adding or updating tasks. --folder matches the project directly in that folder first, then anywhere in its subfolders, skipping dropped and completed projects; more than one subfolder match is refused, and a new project is created only when none matches. Within a privacy scope that allows exactly one folder, update creates new projects in that folder automatically.
       Project arguments (--project and the PROJECT_NAME positional on project-* commands) match by exact name across all folders, then fall back to a primary-key id. Pass an id to target one project unambiguously — e.g. a dropped project that shares a name with an active one (name always resolves to the active twin).
       Task --tag values can be leaf names or paths like People/Alex Rivera and Status/Work 💼.
       Repeat rules are ICS RRULE strings such as FREQ=WEEKLY;INTERVAL=1.

@@ -1749,8 +1749,9 @@ import Testing
 
     for script in [addScript, updateScript] {
         #expect(script.contains("resolveProjectInFolderTree(name, folderForPath(input.folder), input.folder)"))
-        #expect(script.contains("path === root || path.startsWith(root + \"/\")"))
-        #expect(script.contains("project.status === Project.Status.Dropped || project.status === Project.Status.Done"))
+        #expect(script.contains("root.every((part, index) => path[index] === part)"))
+        #expect(script.contains("const matches = direct.length > 0 ? direct : live;"))
+        #expect(script.contains("project.status !== Project.Status.Dropped"))
         #expect(script.contains("Ambiguous project: ${matches.length} projects named"))
     }
     #expect(addScript.contains("createProjectIfMissing: false"))
@@ -2795,4 +2796,90 @@ console.log("ok");
     }
     let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     #expect(proc.terminationStatus == 0, "perspective rule evaluator failures:\n\(stderr)")
+}
+
+@Test func folderTreeProjectResolutionUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let source = thisFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+    let lines = try String(contentsOf: source, encoding: .utf8).components(separatedBy: "\n")
+    guard let open = lines.firstIndex(where: { $0.hasPrefix("function resolveProjectInFolderTree(") }),
+          let close = lines[open...].firstIndex(where: { $0 == "}" }) else {
+        Issue.record("could not locate resolveProjectInFolderTree in \(source.path)")
+        return
+    }
+    let js = lines[open...close].joined(separator: "\n")
+
+    let harness = #"""
+
+const Project = { Status: { Active:"Active", OnHold:"OnHold", Done:"Done", Dropped:"Dropped" } };
+let flattenedProjects = [];
+const paths = new Map();
+function project(id, name, path, status) {
+  paths.set(id, path);
+  return { id: { primaryKey: id }, name, status: status || Project.Status.Active };
+}
+function projectFolderNamesForProject(p) { return paths.get(p.id.primaryKey); }
+function folderPath(folder) { return folder; }
+function resolve(name, folder) {
+  try { const p = resolveProjectInFolderTree(name, folder, folder.join("/")); return p ? p.id.primaryKey : null; }
+  catch (e) { return "error"; }
+}
+
+flattenedProjects = [
+  project("nested", "Tooling", ["Work", "AI"]),
+  project("deadRoot", "Tooling", ["Work"], Project.Status.Dropped),
+  project("rootAdmin", "Admin", ["Work"]),
+  project("subAdmin", "Admin", ["Work", "Sub"]),
+  project("twinA", "Twin", ["Work", "A"]),
+  project("twinB", "Twin", ["Work", "B"], Project.Status.OnHold),
+  project("slash", "X", ["A/B"]),
+  project("shop", "Y", ["Workshop"]),
+  project("top", "Top", []),
+];
+const cases = [
+  [["Tooling", ["Work"]], "nested"],        // ancestor folder finds nested project, skips dropped twin
+  [["Admin", ["Work"]], "rootAdmin"],       // direct child wins over subfolder twin
+  [["Admin", ["Work", "Sub"]], "subAdmin"],
+  [["Twin", ["Work"]], "error"],            // two live subfolder matches are refused
+  [["Twin", ["Work", "B"]], "twinB"],       // on-hold still matches
+  [["X", ["A"]], null],                     // folder named "A/B" is not under "A"
+  [["Y", ["Work"]], null],                  // "Workshop" is not under "Work"
+  [["Top", ["Work"]], null],                // top-level project is not under any folder
+];
+const fails = cases
+  .map(([[name, folder], want]) => [name, folder, want, resolve(name, folder)])
+  .filter(([, , want, got]) => want !== got)
+  .map(([name, folder, want, got]) => `${name} in ${folder.join("/")}: want ${want}, got ${got}`);
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-folder-tree-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "folder-tree resolution failures:\n\(stderr)")
 }

@@ -3160,21 +3160,25 @@ function resolveProjectByNameOrId(name) {
   return flattenedProjects.find(project => project.id.primaryKey === name) || null;
 }
 
-// Resolve a project by exact name anywhere under a folder, subfolders included,
-// so an ancestor --folder finds a project nested below it instead of forking a
-// duplicate. Dropped and completed projects are skipped so a dead twin never
-// absorbs new tasks; more than one live match is refused rather than guessed.
+// Resolve a project by exact name under a folder: one directly in that folder
+// wins, else anywhere in its subfolders, so an ancestor --folder finds a project
+// nested below it instead of forking a duplicate. Dropped and completed projects
+// are skipped so a dead twin never absorbs new tasks; more than one live match
+// at the same level is refused rather than guessed.
 function resolveProjectInFolderTree(name, folder, folderLabel) {
-  const root = folderPath(folder).join("/");
-  const matches = flattenedProjects.filter(project => {
-    if (project.name !== name) { return false; }
-    if (project.status === Project.Status.Dropped || project.status === Project.Status.Done) { return false; }
-    const path = projectFolderNamesForProject(project).join("/");
-    return path === root || path.startsWith(root + "/");
-  });
+  const root = folderPath(folder);
+  const isUnderRoot = path => path.length >= root.length && root.every((part, index) => path[index] === part);
+  const live = flattenedProjects.filter(project => (
+    project.name === name
+      && project.status !== Project.Status.Dropped
+      && project.status !== Project.Status.Done
+      && isUnderRoot(projectFolderNamesForProject(project))
+  ));
+  const direct = live.filter(project => projectFolderNamesForProject(project).length === root.length);
+  const matches = direct.length > 0 ? direct : live;
   if (matches.length > 1) {
     const candidates = matches.map(project => `${project.id.primaryKey} (${projectFolderNamesForProject(project).join("/")})`);
-    throw new Error(`Ambiguous project: ${matches.length} projects named "${name}" under ${folderLabel}: ${candidates.join(", ")}. Pass the full --folder path. Nothing was changed.`);
+    throw new Error(`Ambiguous project: ${matches.length} projects named "${name}" under ${folderLabel}: ${candidates.join(", ")}. Pass the --folder path of the one you mean. Nothing was changed.`);
   }
   return matches[0] || null;
 }
