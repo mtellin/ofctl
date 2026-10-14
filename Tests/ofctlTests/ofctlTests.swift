@@ -1759,6 +1759,14 @@ import Testing
 
     add.createProjectIfMissing = true
     #expect(try OmniJavaScript.addTask(add).contains("createProjectIfMissing: true"))
+
+    // A miss names similar projects, and a silent create says how to undo it.
+    for script in [addScript, updateScript] {
+        #expect(script.contains("Project not found: ${input.project}.${projectNotFoundHint(input.project)}"))
+        #expect(script.contains("similarProjects:"))
+        #expect(script.contains("hint: createdProjectHint(input.project,"))
+        #expect(script.contains("words.some(word => lower.includes(word))"))
+    }
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {

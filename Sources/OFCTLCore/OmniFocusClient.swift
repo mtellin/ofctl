@@ -711,7 +711,7 @@ enum OmniJavaScript {
 
           const dryRunProject = existingProjectNamed(input.project);
           if (!input.createProjectIfMissing && input.project !== null && !dryRunProject.project) {
-            throw new Error(`Project not found: ${input.project}`);
+            throw new Error(`Project not found: ${input.project}.${projectNotFoundHint(input.project)}`);
           }
           const parentTask = parentTaskNamed(input.parent);
           assertAddDestinationAvailable(dryRunProject, parentTask);
@@ -730,6 +730,7 @@ enum OmniJavaScript {
                 privacyScope,
                 projectExists: dryRunProject.project !== null,
                 wouldCreateProject: input.project !== null && dryRunProject.project === null,
+                similarProjects: input.project !== null && dryRunProject.project === null ? similarProjectNames(input.project) : [],
                 parent: parentTask ? { id: parentTask.id.primaryKey, name: parentTask.name } : null,
                 tags: dryRunTags.map(result => ({
                   input: result.input,
@@ -779,7 +780,8 @@ enum OmniJavaScript {
             task: serializeTask(task, false, input.actionGroup),
             meta: {
               privacyScope,
-              createdProject: projectResult.created
+              createdProject: projectResult.created,
+              hint: createdProjectHint(input.project, projectResult.created)
             }
           }, null, 2);
         })();
@@ -971,7 +973,7 @@ enum OmniJavaScript {
             throw new Error(`Project not found or not available in current privacy scope: ${input.project}`);
           }
           if (!input.createProjectIfMissing && input.project !== undefined && input.project !== null && !resolvedProjectResult.project) {
-            throw new Error(`Project not found: ${input.project}`);
+            throw new Error(`Project not found: ${input.project}.${projectNotFoundHint(input.project)}`);
           }
           const dryRunAddTags = input.addTags.map(name => existingTagNamedOrPath(name));
           const dryRunRemoveTags = input.removeTags.map(name => existingTagNamedOrPath(name));
@@ -1001,6 +1003,7 @@ enum OmniJavaScript {
                 privacyScope,
                 projectExists: input.project !== undefined && input.project !== null ? resolvedProjectResult.project !== null : null,
                 wouldCreateProject: input.project !== undefined && input.project !== null && resolvedProjectResult.project === null && input.createProjectIfMissing,
+                similarProjects: input.project !== undefined && input.project !== null && resolvedProjectResult.project === null ? similarProjectNames(input.project) : [],
                 folder: input.project !== undefined && input.project !== null ? effectiveFolder : null,
                 addTags: dryRunAddTags.map(result => ({
                   input: result.input,
@@ -1032,7 +1035,7 @@ enum OmniJavaScript {
               ? { project: null, created: false }
               : (input.createProjectIfMissing ? projectNamedOrCreated(input.project) : existingProjectNamed(input.project));
             if (input.project !== null && !projectResult.project) {
-              throw new Error(`Project not found: ${input.project}`);
+              throw new Error(`Project not found: ${input.project}.${projectNotFoundHint(input.project)}`);
             }
             projectCreated = projectResult.created;
             const insertion = projectResult.project === null ? inbox.ending : projectResult.project.ending;
@@ -1067,7 +1070,8 @@ enum OmniJavaScript {
             tasks: resultTasks,
             meta: {
               privacyScope,
-              createdProject: projectCreated
+              createdProject: projectCreated,
+              hint: createdProjectHint(input.project, projectCreated)
             }
           }, null, 2);
         })();
@@ -3183,6 +3187,42 @@ function resolveProjectInFolderTree(name, folder, folderLabel) {
     throw new Error(`Ambiguous project: ${matches.length} projects named "${name}" under ${folderLabel}: ${candidates.join(", ")}. Pass the --folder path of the one you mean. Nothing was changed.`);
   }
   return matches[0] || null;
+}
+
+// Up to three live projects whose names resemble `name` (case-insensitive
+// containment either way, or a shared word of 4+ letters). Feeds "did you mean"
+// hints when a --project value matches nothing; never used to pick a project.
+function similarProjectNames(name) {
+  if (!name) { return []; }
+  const wanted = String(name).toLowerCase();
+  const words = wanted.split(/[^a-z0-9]+/).filter(word => word.length >= 4);
+  const names = flattenedProjects
+    .filter(project => project.status !== Project.Status.Dropped
+      && project.status !== Project.Status.Done
+      && projectAllowedByPrivacyScope(project))
+    .map(project => project.name)
+    .filter(candidate => {
+      const lower = candidate.toLowerCase();
+      return lower !== wanted
+        && (lower.includes(wanted) || wanted.includes(lower) || words.some(word => lower.includes(word)));
+    });
+  return Array.from(new Set(names)).slice(0, 3);
+}
+
+function projectNotFoundHint(name) {
+  const similar = similarProjectNames(name);
+  return similar.length > 0
+    ? ` Similar projects: ${similar.map(candidate => `"${candidate}"`).join(", ")}. Pass the exact name. Nothing was changed.`
+    : " Run `ofctl projects` to list project names. Nothing was changed.";
+}
+
+// Hint returned when --project silently created a project while a similar one
+// already existed — the usual cause is a misremembered name, not a new project.
+function createdProjectHint(name, created) {
+  if (!created) { return null; }
+  const similar = similarProjectNames(name);
+  if (similar.length === 0) { return null; }
+  return `Created a new project "${name}", but similar projects exist: ${similar.map(candidate => `"${candidate}"`).join(", ")}. If you meant one of them, move the task with \`ofctl task-move TASK_ID --project NAME\` and remove the new project with \`ofctl project-delete "${name}"\`. Pass --no-create-project to refuse instead of create.`;
 }
 
 function projectFolderNamesForTask(task) {
