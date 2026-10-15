@@ -1766,7 +1766,17 @@ import Testing
         #expect(script.contains("similarProjects:"))
         #expect(script.contains("hint: createdProjectHint(input.project,"))
         #expect(script.contains("words.some(word => lower.includes(word))"))
+        // The undo hint deletes the created project by ID, never by a name another
+        // folder may share; a case-only difference still counts as similar.
+        #expect(script.contains("ofctl project-delete ${createdProject.id.primaryKey}"))
+        #expect(!script.contains("project-delete \"${name}\""))
+        #expect(script.contains("return candidate !== String(name)"))
     }
+    #expect(addScript.contains("createdProjectHint(input.project, projectResult.created ? projectResult.project : null)"))
+    #expect(updateScript.contains("createdProjectHint(input.project, createdProject)"))
+    // A project resolved under an out-of-scope ancestor --folder is checked by its
+    // own scope, not refused for the folder's.
+    #expect(addScript.contains("if (input.folder !== null && !projectResult.project) {"))
 }
 
 @Test func omniJavaScriptSupportsRepeatRules() throws {
@@ -2899,4 +2909,75 @@ console.log("ok");
     }
     let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     #expect(proc.terminationStatus == 0, "folder-tree resolution failures:\n\(stderr)")
+}
+
+@Test func similarProjectHintsUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let source = thisFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+    let lines = try String(contentsOf: source, encoding: .utf8).components(separatedBy: "\n")
+    guard let open = lines.firstIndex(where: { $0.hasPrefix("function similarProjectNames(") }),
+          let close = lines[open...].firstIndex(where: { $0.hasPrefix("function projectFolderNamesForTask(") }) else {
+        Issue.record("could not locate the similar-project hint helpers in \(source.path)")
+        return
+    }
+    let js = lines[open..<close].joined(separator: "\n")
+
+    let harness = #"""
+
+const Project = { Status: { Active:"Active", OnHold:"OnHold", Done:"Done", Dropped:"Dropped" } };
+function project(id, name, status) { return { id: { primaryKey: id }, name, status: status || Project.Status.Active }; }
+function projectAllowedByPrivacyScope() { return true; }
+const flattenedProjects = [
+  project("homeLaunch", "Launch"),
+  project("plan", "Launch Plan"),
+  project("tooling", "Tooling"),
+  project("upgrade", "Tooling Upgrade"),
+  project("notes", "Tooling Notes"),
+  project("mine", "My Tooling"),
+  project("old", "Tooling Archive", Project.Status.Dropped),
+];
+const fails = [];
+// Creating "Launch" under another folder while Launch exists elsewhere: the undo
+// must name the new project's id, never the shared name.
+const hint = createdProjectHint("Launch", project("newLaunch", "Launch"));
+if (!hint || !hint.includes("ofctl project-delete newLaunch")) { fails.push(`undo hint must delete by id: ${hint}`); }
+if (hint && hint.includes('project-delete "Launch"')) { fails.push(`undo hint must not delete by name: ${hint}`); }
+if (createdProjectHint("Launch", null) !== null) { fails.push("no hint when nothing was created"); }
+// A case-only difference is the likeliest typo: list it, and first.
+const similar = similarProjectNames("tooling");
+if (similar[0] !== "Tooling") { fails.push(`case-only match must lead: ${JSON.stringify(similar)}`); }
+if (similar.includes("Tooling Archive")) { fails.push("dropped projects are never suggested"); }
+if (similarProjectNames("Tooling").includes("Tooling")) { fails.push("an exact name is not its own suggestion"); }
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-similar-hints-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+
+    if proc.terminationStatus == 127 {
+        return  // node not installed on this machine; CI covers this case
+    }
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "similar-project hint failures:\n\(stderr)")
 }

@@ -697,7 +697,7 @@ enum OmniJavaScript {
               }
               return;
             }
-            if (input.folder !== null) {
+            if (input.folder !== null && !projectResult.project) {
               const folder = folderForPath(input.folder);
               if (!folderAllowedByPrivacyScope(folder)) {
                 throw new Error(`Destination folder not available in current privacy scope: ${input.folder}`);
@@ -781,7 +781,7 @@ enum OmniJavaScript {
             meta: {
               privacyScope,
               createdProject: projectResult.created,
-              hint: createdProjectHint(input.project, projectResult.created)
+              hint: createdProjectHint(input.project, projectResult.created ? projectResult.project : null)
             }
           }, null, 2);
         })();
@@ -1030,6 +1030,7 @@ enum OmniJavaScript {
           }
 
           let projectCreated = false;
+          let createdProject = null;
           if (input.project !== undefined) {
             const projectResult = input.project === null
               ? { project: null, created: false }
@@ -1038,6 +1039,7 @@ enum OmniJavaScript {
               throw new Error(`Project not found: ${input.project}.${projectNotFoundHint(input.project)}`);
             }
             projectCreated = projectResult.created;
+            if (projectResult.created) { createdProject = projectResult.project; }
             const insertion = projectResult.project === null ? inbox.ending : projectResult.project.ending;
             moveTasks(resolvedTasks, insertion);
           }
@@ -1071,7 +1073,7 @@ enum OmniJavaScript {
             meta: {
               privacyScope,
               createdProject: projectCreated,
-              hint: createdProjectHint(input.project, projectCreated)
+              hint: createdProjectHint(input.project, createdProject)
             }
           }, null, 2);
         })();
@@ -3203,9 +3205,10 @@ function similarProjectNames(name) {
     .map(project => project.name)
     .filter(candidate => {
       const lower = candidate.toLowerCase();
-      return lower !== wanted
+      return candidate !== String(name)
         && (lower.includes(wanted) || wanted.includes(lower) || words.some(word => lower.includes(word)));
-    });
+    })
+    .sort((a, b) => (a.toLowerCase() === wanted ? 0 : 1) - (b.toLowerCase() === wanted ? 0 : 1));
   return Array.from(new Set(names)).slice(0, 3);
 }
 
@@ -3218,11 +3221,11 @@ function projectNotFoundHint(name) {
 
 // Hint returned when --project silently created a project while a similar one
 // already existed — the usual cause is a misremembered name, not a new project.
-function createdProjectHint(name, created) {
-  if (!created) { return null; }
+function createdProjectHint(name, createdProject) {
+  if (!createdProject) { return null; }
   const similar = similarProjectNames(name);
   if (similar.length === 0) { return null; }
-  return `Created a new project "${name}", but similar projects exist: ${similar.map(candidate => `"${candidate}"`).join(", ")}. If you meant one of them, move the task with \`ofctl task-move TASK_ID --project NAME\` and remove the new project with \`ofctl project-delete "${name}"\`. Pass --no-create-project to refuse instead of create.`;
+  return `Created a new project "${name}", but similar projects exist: ${similar.map(candidate => `"${candidate}"`).join(", ")}. If you meant one of them, move the task with \`ofctl task-move TASK_ID --project NAME\` and remove the new project with \`ofctl project-delete ${createdProject.id.primaryKey}\`. Pass --no-create-project to refuse instead of create.`;
 }
 
 function projectFolderNamesForTask(task) {

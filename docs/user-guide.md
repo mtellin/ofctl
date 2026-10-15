@@ -417,6 +417,12 @@ project (works on `add-group` and `update` too):
 ofctl add "Ask Taylor about launch date" --project "Work Follow-ups" --folder Work --no-create-project
 ```
 
+When `--project` matches nothing, the error names up to three similar active
+projects (names that differ only in capitalization are listed first). When it
+creates a project while similar ones exist, the JSON reply carries `meta.hint`
+with the undo commands; the `project-delete` there uses the new project's id, so
+it can never remove a same-named project in another folder.
+
 Add tags:
 
 ```sh
