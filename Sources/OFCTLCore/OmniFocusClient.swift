@@ -3159,8 +3159,20 @@ function projectFolderNamesForProject(project) {
 // Name match wins when both a name and a same-string id could match; passing an
 // id targets a specific project unambiguously (e.g. a dropped twin that shares a
 // name with an active project). Never does fuzzy/substring matching.
+// Two live projects sharing a name are refused, not guessed: byName returns the first,
+// so on 2026-10-14 `project-status "AI Learning Queue"` changed one of two active twins
+// and silently left the other. A dropped or done twin is fine; byName prefers the live one.
 function resolveProjectByNameOrId(name) {
   if (name === null || name === undefined) { return null; }
+  const liveTwins = flattenedProjects.filter(project => (
+    project.name === name
+      && project.status !== Project.Status.Dropped
+      && project.status !== Project.Status.Done
+  ));
+  if (liveTwins.length > 1) {
+    const candidates = liveTwins.map(project => `${project.id.primaryKey} (${projectFolderNamesForProject(project).join("/")})`);
+    throw new Error(`Ambiguous project: ${liveTwins.length} live projects named "${name}": ${candidates.join(", ")}. Pass the project id instead. Nothing was changed.`);
+  }
   const byName = flattenedProjects.byName(name);
   if (byName) { return byName; }
   return flattenedProjects.find(project => project.id.primaryKey === name) || null;

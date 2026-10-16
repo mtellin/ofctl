@@ -2816,6 +2816,76 @@ console.log("ok");
     #expect(proc.terminationStatus == 0, "perspective rule evaluator failures:\n\(stderr)")
 }
 
+@Test func nameOrIdResolutionRefusesLiveTwinsUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let source = thisFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+    let lines = try String(contentsOf: source, encoding: .utf8).components(separatedBy: "\n")
+    guard let open = lines.firstIndex(where: { $0.hasPrefix("function resolveProjectByNameOrId(") }),
+          let close = lines[open...].firstIndex(where: { $0 == "}" }) else {
+        Issue.record("could not locate resolveProjectByNameOrId in \(source.path)")
+        return
+    }
+    let js = lines[open...close].joined(separator: "\n")
+
+    let harness = #"""
+
+const Project = { Status: { Active:"Active", OnHold:"OnHold", Done:"Done", Dropped:"Dropped" } };
+function project(id, name, status) {
+  return { id: { primaryKey: id }, name, status: status || Project.Status.Active };
+}
+function projectFolderNamesForProject(p) { return ["Personal"]; }
+const flattenedProjects = [
+  project("q1", "Queue"), project("q2", "Queue"),
+  project("liveOne", "Solo"), project("deadOne", "Solo", Project.Status.Dropped),
+  project("doneTwin", "Old", Project.Status.Done), project("liveOld", "Old", Project.Status.OnHold),
+];
+// byName: the live match when there is one, like OmniFocus's own lookup.
+flattenedProjects.byName = name => {
+  const all = flattenedProjects.filter(p => p.name === name);
+  return all.find(p => p.status !== Project.Status.Dropped && p.status !== Project.Status.Done) || all[0] || null;
+};
+function resolve(name) {
+  try { const p = resolveProjectByNameOrId(name); return p ? p.id.primaryKey : null; }
+  catch (e) { return "error"; }
+}
+const cases = [
+  ["Queue", "error"],      // two active twins are refused
+  ["q2", "q2"],            // an id still targets one of them
+  ["Solo", "liveOne"],     // a dropped twin does not make it ambiguous
+  ["Old", "liveOld"],      // nor does a done twin; on-hold counts as live
+  ["Nope", null],
+];
+const fails = cases.filter(([n, want]) => resolve(n) !== want).map(([n, want]) => `${n}: want ${want}, got ${resolve(n)}`);
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-name-or-id-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "name-or-id resolver failures:\n\(stderr)")
+}
+
 @Test func folderTreeProjectResolutionUnderNode() throws {
     let thisFile = URL(fileURLWithPath: #filePath)
     let source = thisFile
