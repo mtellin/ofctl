@@ -163,6 +163,7 @@ enum OmniJavaScript {
         let due = try jsonLiteral(query.due)
         let repeatRule = try jsonLiteral(query.repeatRule)
         let completed = try jsonLiteral(query.completed)
+        let text = try jsonLiteral(query.text)
         let limit = query.limit.map(String.init) ?? "null"
         let privacy = try privacyPrelude(privacyScope)
         return """
@@ -182,6 +183,7 @@ enum OmniJavaScript {
           const dueFilter = \(due);
           const repeatRuleFilter = \(repeatRule);
           const completedFilter = \(completed);
+          const textFilter = (\(text) || "").toLowerCase() || null;
           const limit = \(limit);
           const includeNotes = \(query.includeNotes ? "true" : "false");
           const includeCompleted = \(query.includeCompleted ? "true" : "false");
@@ -456,6 +458,8 @@ enum OmniJavaScript {
             if (!dateMatches(task.effectiveDueDate || task.dueDate, dueFilter, false)) { return false; }
             if (!repeatRuleMatches(task, repeatRuleFilter)) { return false; }
             if (!dateMatches(task.effectiveCompletedDate || task.completionDate, completedFilter, false)) { return false; }
+            if (textFilter && !(task.name || "").toLowerCase().includes(textFilter) &&
+                !(task.note || "").toLowerCase().includes(textFilter)) { return false; }
             return true;
           });
 
@@ -757,7 +761,7 @@ enum OmniJavaScript {
           setMarkdownNote(task, note);
           // Read the note back. A new task has no previous note to restore, so a
           // failed write removes the task (and a project created for it) instead.
-          const storedProblems = stateReadBackProblems(note, task.note, "");
+          const storedProblems = stateReadBackProblems(note, plainWithoutAutolinks(task.note), "");
           if (!noteTextPersisted(task, note)) { storedProblems.unshift("note text did not persist"); }
           if (storedProblems.length > 0) {
             deleteObject(task);
@@ -2632,6 +2636,9 @@ function setMarkdownNote(task, markdown) {
   const A = Style.Attribute;
   const base = cleanNoteStyle(task.noteText);
   if (!base) {
+    // No unformatted run to build on. The plain setter does NOT inherit the first run's
+    // link: measured live 2026-10-16 on a URL-only note and on an already-bled note
+    // (tel: on every run), both came back with no link, so this path also heals a bleed.
     task.note = parsed.plain;
     return;
   }
@@ -2748,7 +2755,14 @@ function noteTextToMarkdown(noteObj) {
       // round trip accumulated another copy. Bare-emitting URL-valued text
       // keeps the round trip idempotent.
       const rawIsUrl = /^\w[\w+.-]*:\/\//.test(raw.trim());
-      text = (raw === link.string || rawIsUrl) ? escapeLineStartHashes(escapeMarkdownText(raw), atLineStart) : markdownLinkRun(raw, link.string);
+      // Same for a bare domain or phone number OmniFocus auto-linked itself
+      // ("example.com" -> http://example.com, "952-993-3242" -> tel:…): emitting
+      // [text](url) wrote "text (url)" back, which grew the note on every write.
+      const bareTarget = link.string.replace(/^(?:https?:\/\/|mailto:|tel:)/i, "").replace(/\/$/, "");
+      const digits = v => v.replace(/\D/g, "");
+      const autolinked = bareTarget === raw.trim() ||
+        (/^tel:/i.test(link.string) && digits(raw).length >= 7 && digits(raw) === digits(link.string));
+      text = (raw === link.string || rawIsUrl || autolinked) ? escapeLineStartHashes(escapeMarkdownText(raw), atLineStart) : markdownLinkRun(raw, link.string);
     }
 
     return text;
@@ -2767,13 +2781,32 @@ function noteTextToMarkdown(noteObj) {
 private let stateBlockSupport = #"""
 const STATE_MARKER = "=== ofctl-state ===";
 
-function parseStateBlock(markdown) {
-  const text = (markdown || "").replace(/\r\n/g, "\n");
-  const lines = text.split("\n");
-  let markerIndex = -1;
+// A state line whose whole text is one link, as a link bleed leaves it:
+// "[=== ofctl-state ===](tel:…)". Reading through the wrapper keeps the block
+// parseable, so the next write replaces it cleanly instead of appending a second
+// block or (update --note) dropping the state as "no block" (2026-10-02).
+function unwrapLinkedLine(line) {
+  const m = /^\[(.*)\]\([^()\s]+\)$/.exec(line.trim());
+  return m ? m[1] : line;
+}
+
+function stateMarkerIndex(lines) {
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === STATE_MARKER) { markerIndex = i; break; }
+    if (unwrapLinkedLine(lines[i]).trim() === STATE_MARKER) { return i; }
   }
+  return -1;
+}
+
+// A bled run can span lines: "[=== ofctl-state ===\nk: v](tel:…)". Unwrap any link
+// whose text crosses a newline before reading lines (review round 2).
+function unwrapMultilineLinks(text) {
+  return text.replace(/\[([^\[\]]*\n[^\[\]]*)\]\([^()\s]+\)/g, "$1");
+}
+
+function parseStateBlock(markdown) {
+  const text = unwrapMultilineLinks((markdown || "").replace(/\r\n/g, "\n"));
+  const lines = text.split("\n");
+  const markerIndex = stateMarkerIndex(lines);
   if (markerIndex === -1) {
     return { hasBlock: false, freeform: text, state: {}, order: [] };
   }
@@ -2781,7 +2814,7 @@ function parseStateBlock(markdown) {
   const state = {};
   const order = [];
   for (let i = markerIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
+    const line = unwrapLinkedLine(lines[i]);
     if (line.trim().length === 0) { continue; }
     const colon = line.indexOf(":");
     if (colon <= 0) { continue; }
@@ -2812,14 +2845,11 @@ function composeStateNote(freeform, state, order) {
 function hasWellFormedStateBlock(markdown) {
   const parsed = parseStateBlock(markdown);
   if (!parsed.hasBlock) { return false; }
-  const lines = (markdown || "").replace(/\r\n/g, "\n").split("\n");
-  let marker = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === STATE_MARKER) { marker = i; break; }
-  }
+  const lines = unwrapMultilineLinks((markdown || "").replace(/\r\n/g, "\n")).split("\n");
+  const marker = stateMarkerIndex(lines);
   let sawKey = false;
   for (let i = marker + 1; i < lines.length; i++) {
-    const line = lines[i];
+    const line = unwrapLinkedLine(lines[i]);
     if (line.trim().length === 0) { continue; }
     const colon = line.indexOf(":");
     if (colon <= 0) { return false; }
@@ -2921,7 +2951,56 @@ function assertNoteStorable(target, markdown, previousMarkdown) {
 function noteTextPersisted(target, markdown) {
   const norm = v => (v || "").replace(/\r\n?/g, "\n").replace(/\s+$/, "");
   const want = norm(markdownRuns(markdown || "").plain);
-  return norm(target.note) === want || norm(target.noteText.string) === want;
+  return norm(target.note) === want || norm(plainWithoutAutolinks(target.note)) === want ||
+    norm(target.noteText.string) === want;
+}
+
+// target.note with auto-link renderings removed: "16180-16184 <tel:16180-16184>" ->
+// "16180-16184". The state read-back compares against this, not the raw getter, so a
+// value OmniFocus merely auto-linked is not reported as altered and rolled back
+// (2026-10-09 close-automate; before v0.21.1, any phone or domain in the note).
+function plainWithoutAutolinks(plain) {
+  // Only "X <url>" where url is X's own auto-link: literal "<urn:foo>" or a mismatched
+  // suffix is real content and must still fail the read-back (review 2026-10-16).
+  const bare = u => u.replace(/^(?:https?:\/\/|mailto:|tel:)/i, "").replace(/\/$/, "");
+  const digits = v => v.replace(/\D/g, "");
+  // A phone match may start early ("2. 952 993 3242", a date before it): accept it if
+  // any word-boundary suffix of the matched text has the link's digits.
+  const phoneSuffixMatches = (text, url) => {
+    let decoded = url;
+    try { decoded = decodeURIComponent(url); } catch (e) { /* keep it raw */ }
+    const want = digits(decoded);
+    for (let i = 0; i < text.length; i += 1) {
+      if ((i === 0 || /[\s(]/.test(text[i - 1])) && digits(text.slice(i)) === want) { return true; }
+    }
+    return false;
+  };
+  return (plain || "")
+    .replace(/([+(\d][\d ().-]{5,}\d) <(tel:[^<>\s]*)>/g,
+      (m, text, url) => (phoneSuffixMatches(text, url) ? text : m))
+    .replace(/(\S+) <([A-Za-z][\w+.-]*:[^<>\s]*)>/g,
+      (m, text, url) => (bare(url).toLowerCase() === text.toLowerCase() || url === text ? text : m));
+}
+
+// A detached copy of a note, run by run. Built as new Text("", note.style) + append,
+// every plain run inherited the FIRST run's link, so a rollback on a note starting
+// with a link wrapped the whole note in it (nMtt3li1XQF, cn7iNU9drLr, 2026-10-02).
+// Each run now carries its own style; checked in memory on two live notes 2026-10-16.
+function copyNoteText(noteObj) {
+  const runs = noteObj.ranges(TextComponent.AttributeRuns);
+  // Seed with an unlinked run's style; a linked seed bleeds into every run that does not
+  // set its own link, whichever end it came from (Codex review 2026-10-16).
+  const unlinked = runs.find(range => {
+    const link = noteObj.styleForRange(range).get(Style.Attribute.Link);
+    return !(link && link.string && link.string.length > 0);
+  });
+  // Prefer a fully clean run (cleanNoteStyle: no link, bold, italic, code...), or a bold
+  // first run would turn the rest bold (review round 2).
+  const clean = cleanNoteStyle(noteObj);
+  const seed = unlinked || runs[runs.length - 1];
+  const copy = new Text("", clean || (seed ? noteObj.styleForRange(seed) : noteObj.style));
+  runs.forEach(range => copy.append(new Text(noteObj.textInRange(range).string, noteObj.styleForRange(range))));
+  return copy;
 }
 
 // Write the note, then read it back. If the text did not persist, restore the
@@ -2933,11 +3012,10 @@ function setMarkdownNoteVerified(target, markdown) {
   assertNoteStorable(target, markdown, before);
   // A real copy, so the restore keeps links and styles the markdown form cannot
   // carry. Assigning the original object back does not work: it is a live proxy.
-  const snapshot = new Text("", original.style);
-  snapshot.append(original);
+  const snapshot = copyNoteText(original);
   setMarkdownNote(target, markdown);
   const lf = v => (v || "").replace(/\r\n?/g, "\n");
-  const problems = stateReadBackProblems(markdown, target.note, before);
+  const problems = stateReadBackProblems(markdown, plainWithoutAutolinks(target.note), before);
   if (!noteTextPersisted(target, markdown)) { problems.unshift("note text did not persist"); }
   if (problems.length === 0) { return; }
   target.noteText = snapshot;

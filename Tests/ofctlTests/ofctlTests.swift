@@ -120,6 +120,25 @@ import Testing
     ))))
 }
 
+@Test func parsesSearchAsTasksWithText() throws {
+    guard case .tasks(let query) = try CLI.parse(["ofctl", "search", "soil", "--all", "--include-notes"]).command else {
+        Issue.record("search did not parse as a tasks query"); return
+    }
+    #expect(query.text == "soil")
+    #expect(query.limit == nil)
+    #expect(query.includeNotes)
+    guard case .tasks(let viaFlag) = try CLI.parse(["ofctl", "tasks", "--text", "soil"]).command else {
+        Issue.record("tasks --text did not parse"); return
+    }
+    #expect(viaFlag.text == "soil")
+    #expect(throws: (any Error).self) { try CLI.parse(["ofctl", "search"]) }
+    #expect(throws: (any Error).self) { try CLI.parse(["ofctl", "search", "--all"]) }
+    #expect(throws: (any Error).self) { try CLI.parse(["ofctl", "search", ""]) }
+    let script = try OmniJavaScript.tasksQuery(query)
+    #expect(script.contains("const textFilter = (\"soil\" || \"\").toLowerCase() || null;"))
+    #expect(script.contains("(task.note || \"\").toLowerCase().includes(textFilter)"))
+}
+
 @Test func parsesTaskQueryIncludeNotes() throws {
     let options = try CLI.parse(["ofctl", "tasks", "--include-notes"])
 
@@ -2297,6 +2316,158 @@ console.log("ok");
 // reported success. stateReadBackProblems must flag that, while values that the
 // read path merely escapes (_ \) must not be reported as changed. OmniFocus storage
 // is simulated as markdownRuns(...).plain, which is what task.note returns.
+// Link bleed (2026-10-02 .. 10-09; diagnosed 2026-10-16 by Codex + Claude independently).
+// The stub models OmniFocus's style cascade: a run keeps only the attributes set on it,
+// and anything else falls through to the base style of the Text it was appended to.
+// That cascade is what the old stubs could not express, so they never saw the bleed.
+@Test func noteLinkBleedUnderNode() throws {
+    let thisFile = URL(fileURLWithPath: #filePath)
+    let source = thisFile
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Sources/OFCTLCore/OmniFocusClient.swift")
+    let lines = try String(contentsOf: source, encoding: .utf8).components(separatedBy: "\n")
+    func extract(_ name: String) throws -> String {
+        guard let open = lines.firstIndex(where: { $0.contains("private let \(name) = #\"\"\"") }) else {
+            throw ExtractionError.missing(name)
+        }
+        guard let close = lines[(open + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "\"\"\"#" }) else {
+            throw ExtractionError.unterminated(name)
+        }
+        return lines[(open + 1)..<close].joined(separator: "\n")
+    }
+    let js = try extract("markdownNoteSupport") + "\n" + (try extract("stateBlockSupport"))
+    // The harness tests copyNoteText itself; this pins the rollback to actually use it.
+    #expect(js.contains("const snapshot = copyNoteText(original);"))
+
+    let harness = #"""
+
+const A = { Link: "Link", FontWeight: "FontWeight", FontItalic: "FontItalic", FontFixedPitch: "FontFixedPitch",
+  UnderlineStyle: "UnderlineStyle", StrikethroughStyle: "StrikethroughStyle", BackgroundColor: "BackgroundColor",
+  FontSize: "FontSize", FontFamily: "FontFamily" };
+globalThis.Style = { Attribute: A };
+globalThis.UnderlineStyle = { None: "none" };
+globalThis.TextComponent = { AttributeRuns: "runs" };
+const DEFAULTS = { FontWeight: 5, FontSize: 13, UnderlineStyle: "none", StrikethroughStyle: "none" };
+class St {
+  constructor(parent, local) { this.parent = parent || null; this.local = Object.assign({}, local || {}); }
+  get(a) { return a in this.local ? this.local[a] : (this.parent ? this.parent.get(a) : DEFAULTS[a] ?? null); }
+  set(a, v) { this.local[a] = v; }
+  explicit() { return Object.assign({}, this.parent ? this.parent.explicit() : {}, this.local); }
+}
+const KEYS = Object.values(A);
+const sig = st => JSON.stringify(KEYS.map(k => { const v = st.get(k); return v && v.string !== undefined ? v.string : v; }));
+class Text {
+  constructor(str, style) { this.style = new St(null, style ? style.explicit() : {}); this.parts = str ? [{ s: str, st: this.style }] : []; }
+  append(other) { other.parts.forEach(p => this.parts.push({ s: p.s, st: new St(this.style, p.st.local === this.style.local ? {} : p.st.explicit()) })); }
+  get string() { return this.parts.map(p => p.s).join(""); }
+  get range() { return { start: 0, end: this.string.length, isEmpty: this.string.length === 0 }; }
+  ranges() {
+    const out = []; let at = 0;
+    this.parts.forEach(p => {
+      const last = out[out.length - 1];
+      if (last && sig(last.st) === sig(p.st)) { last.end += p.s.length; } else { out.push({ start: at, end: at + p.s.length, st: p.st, isEmpty: false }); }
+      at += p.s.length;
+    });
+    return out;
+  }
+  textInRange(r) { return { string: this.string.slice(r.start, r.end) }; }
+  styleForRange(r) { return r.st; }
+}
+globalThis.Text = Text;
+const linkRun = (s, url) => { const t = new Text(s, new St(null, { Link: { string: url } })); return t; };
+const note = (...pieces) => { const t = new Text("", new St(null, {})); pieces.forEach(p => t.append(typeof p === "string" ? new Text(p, new St(null, {})) : p)); return t; };
+const linkAt = (t, needle) => { const i = t.string.indexOf(needle); const r = t.ranges().find(r => r.start <= i && i < r.end); const l = r.st.get(A.Link); return l ? l.string : null; };
+const fails = [];
+const body = "\nbody line\n\n=== ofctl-state ===\nk: v";
+const soil = note(linkRun("websoilsurvey.nrcs.usda.gov", "http://websoilsurvey.nrcs.usda.gov"), body);
+
+// The old snapshot construction must reproduce the bleed under this stub, or the stub proves nothing.
+const old = new Text("", soil.ranges()[0].st); old.append(soil);
+if (linkAt(old, "=== ofctl-state ===") === null) fails.push("stub does not reproduce the old bleed");
+const copy = copyNoteText(soil);
+if (copy.string !== soil.string) fails.push("copy changed the text");
+if (linkAt(copy, "=== ofctl-state ===") !== null) fails.push("copy bled the link onto the state header");
+if (linkAt(copy, "websoilsurvey") !== "http://websoilsurvey.nrcs.usda.gov") fails.push("copy lost the real link");
+
+// A linked LAST run must not bleed backwards either (Codex review 2026-10-16).
+const tail = note("body\n", linkRun("example.com", "http://example.com"));
+const tailCopy = copyNoteText(tail);
+if (linkAt(tailCopy, "body") !== null) fails.push("copy bled a trailing link onto earlier text");
+if (linkAt(tailCopy, "example.com") !== "http://example.com") fails.push("copy lost a trailing link");
+
+// Only real autolink renderings are stripped from the read-back text.
+const strip = [
+  ["status: done 16180-16184 <tel:16180-16184>", "status: done 16180-16184"],
+  ["site: example.com <http://example.com>", "site: example.com"],
+  ["call 952 993 3242 <tel:9529933242>", "call 952 993 3242"],
+  ["k: contact <urn:foo>", "k: contact <urn:foo>"],
+  ["ref: see <https://x.com/a>", "ref: see <https://x.com/a>"],
+  ["src: Mike <mailto:mike@x.com>", "src: Mike <mailto:mike@x.com>"],
+  ["k: 2. 952 993 3242 <tel:9529933242>", "k: 2. 952 993 3242"],
+  ["s: 2026-10-16 952 993 3242 <tel:9529933242>", "s: 2026-10-16 952 993 3242"],
+  ["call (952) 993-3242 <tel:(952)%20993-3242>", "call (952) 993-3242"],
+  ["Example.com <http://example.com>", "Example.com"],
+];
+// Round 2: a bold first run must not turn the rest bold in the rollback copy.
+const boldRun = (s) => new Text(s, new St(null, { FontWeight: 9 }));
+const boldFirst = note(boldRun("Heading"), "\nplain body\n\n=== ofctl-state ===\nk: v");
+const boldCopy = copyNoteText(boldFirst);
+const weightAt = (t, needle) => { const i = t.string.indexOf(needle); return t.ranges().find(r => r.start <= i && i < r.end).st.get(A.FontWeight); };
+if (weightAt(boldCopy, "plain body") !== 5) fails.push("copy spread bold onto plain text");
+if (weightAt(boldCopy, "Heading") !== 9) fails.push("copy lost the bold heading");
+// Round 2: one linked run spanning lines still parses as a block.
+const multi = "prose\n\n[=== ofctl-state ===\nk: v](tel:1234567)";
+if (parseStateBlock(multi).state.k !== "v") fails.push("multi-line linked block not parsed");
+if (noteWithPreservedState(multi, "new prose").indexOf("k: v") === -1) fails.push("update --note dropped a multi-line linked block");
+strip.forEach(([input, want]) => { const got = plainWithoutAutolinks(input); if (got !== want) fails.push("strip " + JSON.stringify(input) + " -> " + JSON.stringify(got)); });
+
+// Auto-linked bare domains and phones read back as their text, so a write does not grow "text (url)".
+const md = noteTextToMarkdown(soil);
+if (!md.startsWith("websoilsurvey.nrcs.usda.gov\n")) fails.push("bare-domain autolink emitted as markdown link: " + JSON.stringify(md.slice(0, 60)));
+const tel = noteTextToMarkdown(note(linkRun("952-993-3242", "tel:952-993-3242"), " call"));
+if (tel !== "952-993-3242 call") fails.push("phone autolink emitted as " + JSON.stringify(tel));
+const real = noteTextToMarkdown(note(linkRun("docs", "https://x.com/docs"), " here"));
+if (real.indexOf("](https://x.com/docs)") === -1) fails.push("a real titled link lost its target: " + JSON.stringify(real));
+
+// A bled state block still parses, keeps its state, and is not duplicated or dropped.
+const bled = "[prose](tel:1)\n\n[=== ofctl-state ===](tel:1)\n[k: v](tel:1)\n[last-touched: 2026-08-23T19:52 gtd: x](tel:1)";
+const parsed = parseStateBlock(bled);
+if (!parsed.hasBlock || parsed.state.k !== "v") fails.push("linked state block not parsed: " + JSON.stringify(parsed.state));
+if (!hasWellFormedStateBlock(bled)) fails.push("linked state block not well-formed");
+if (noteWithPreservedState(bled, "new prose").indexOf("k: v") === -1) fails.push("update --note dropped a linked state block");
+
+// The state read-back ignores OmniFocus's autolink rendering of a value.
+const st = "prose\n\n=== ofctl-state ===\nstatus: done 16180-16184";
+const storedRaw = markdownRuns(st).plain + " <tel:16180-16184>";
+if (stateReadBackProblems(st, plainWithoutAutolinks(storedRaw), "").length) fails.push("autolinked state value still flagged");
+if (!stateReadBackProblems(st, storedRaw, "").length) fails.push("harness check: raw getter no longer differs");
+
+if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
+console.log("ok");
+"""#
+
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ofctl-link-bleed-\(UUID().uuidString).mjs")
+    try (js + harness).write(to: tmp, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    proc.arguments = ["node", tmp.path]
+    let err = Pipe()
+    proc.standardError = err
+    proc.standardOutput = Pipe()
+    do {
+        try proc.run()
+    } catch {
+        Issue.record("could not launch node: \(error)")
+        return
+    }
+    proc.waitUntilExit()
+    let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(proc.terminationStatus == 0, "link bleed failures:\n\(stderr)")
+}
+
 @Test func stateReadBackFlagsAlteredValuesUnderNode() throws {
     let thisFile = URL(fileURLWithPath: #filePath)
     let source = thisFile
@@ -2401,7 +2572,7 @@ console.log("ok");
 
     let addScript = try OmniJavaScript.addTask(defaultAddTask())
     #expect(addScript.contains("stateReadBackProblems(note, markdownRuns(note).plain"))
-    #expect(addScript.contains("stateReadBackProblems(note, task.note"))
+    #expect(addScript.contains("stateReadBackProblems(note, plainWithoutAutolinks(task.note)"))
     #expect(addScript.contains("deleteObject(task)"))
 }
 

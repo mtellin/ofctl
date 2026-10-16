@@ -66,6 +66,8 @@ public struct TaskQuery: Equatable {
     public var includeNotes: Bool
     public var limit: Int?
     public var format: OutputFormat
+    /// Case-insensitive substring of the task name or note (`--text`, or `search TEXT`).
+    public var text: String? = nil
 }
 
 public struct TaskLookup: Equatable {
@@ -418,7 +420,8 @@ public enum CLI {
     Usage:
       ofctl perspectives [--format json|text]
       ofctl task TASK_ID [--include-notes] [--include-children] [--format json|text]
-      ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--format json|text]
+      ofctl tasks [--perspective NAME] [--project NAME] [--folder NAME] [--tag NAME] [--tag-mode all|any] [--flagged] [--available FILTER] [--planned FILTER] [--deferred FILTER] [--due FILTER] [--repeat-rule any|none|RRULE] [--completed FILTER] [--limit COUNT|--all] [--include-notes] [--include-completed] [--include-dropped] [--text TEXT] [--format json|text]
+      ofctl search TEXT [any tasks option]   (= tasks --text TEXT: case-insensitive match on name or note)
       ofctl add NAME [--project NAME [--folder FOLDER_PATH] [--no-create-project]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run] [--format json|text]
       ofctl add-group NAME [--project NAME [--folder FOLDER_PATH] [--no-create-project]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run] [--format json|text]
       ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--note-replace-all] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
@@ -482,6 +485,15 @@ public enum CLI {
             return try CommandLineOptions(command: .task(parseTaskLookup(args)))
         case "tasks":
             return try CommandLineOptions(command: .tasks(parseTaskQuery(args)))
+        case "search":
+            // Tried five times as if it existed (friction log 2026-09..10), so it does now:
+            // `tasks --text TEXT`, with every other tasks filter still available.
+            guard let text = args.first, !text.hasPrefix("--"), !text.isEmpty else {
+                throw CLIError.usage("search requires the text to look for\n\n\(help)")
+            }
+            var query = try parseTaskQuery(Array(args.dropFirst()))
+            query.text = text
+            return CommandLineOptions(command: .tasks(query))
         case "add":
             return try CommandLineOptions(command: .add(parseAddTask(args, actionGroup: false)))
         case "add-group":
@@ -602,6 +614,8 @@ public enum CLI {
                 query.limit = limit
             case "--all":
                 query.limit = nil
+            case "--text":
+                query.text = try parser.value(after: arg)
             case "--format":
                 let value = try parser.value(after: arg)
                 guard let format = OutputFormat(rawValue: value) else {
