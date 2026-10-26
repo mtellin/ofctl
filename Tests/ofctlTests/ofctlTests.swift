@@ -2265,6 +2265,23 @@ eq("project set with a composed note is verbatim",
 eq("project clear empties the freeform but keeps state",
    applyProjectNoteEdit(proj, "clear", ""), "=== ofctl-state ===\nslips: 7");
 
+// update --note-append: adds after the freeform note and keeps the block, with no
+// read by the caller (an empty read + replacing write wiped a note, 2026-10-26).
+eq("append keeps the existing prose and the block",
+   updatedTaskNote(withBlock, "Added later.", false, true),
+   "Run vinegar through the unit.\n\nAdded later.\n\n" + BLOCK);
+eq("append to a note with no block",
+   updatedTaskNote("Line one.\n\n", "  Line two.  ", false, true),
+   "Line one.\n\nLine two.");
+eq("append to an empty note is just the text",
+   updatedTaskNote("", "First words", false, true), "First words");
+let appendRefused = false;
+try { updatedTaskNote(withBlock, "x\n\n" + BLOCK, false, true); } catch (e) { appendRefused = true; }
+if (!appendRefused) fails.push("append accepted text carrying its own state block");
+eq("replace-all is still verbatim", updatedTaskNote(withBlock, "whole", true, false), "whole");
+eq("plain write still replaces the freeform only",
+   updatedTaskNote(withBlock, "new prose", false, false), "new prose\n\n" + BLOCK);
+
 if (fails.length) { console.error(fails.join("\n")); process.exit(1); }
 console.log("ok");
 """#
@@ -2301,9 +2318,16 @@ console.log("ok");
 
     let script = try OmniJavaScript.updateTask(update)
 
-    #expect(script.contains("input.noteReplaceAll ? input.note : noteWithPreservedState(noteTextToMarkdown(task.noteText), input.note)"))
+    #expect(script.contains("updatedTaskNote(noteTextToMarkdown(task.noteText), input.note, input.noteReplaceAll, input.noteAppend)"))
     #expect(script.contains("function noteWithPreservedState"))
+    #expect(script.contains("function updatedTaskNote"))
     #expect(script.contains("noteReplaceAll: false"))
+    #expect(script.contains("noteAppend: false"))
+
+    var appended = defaultUpdateTask()
+    appended.note = "more prose"
+    appended.noteAppend = true
+    #expect(try OmniJavaScript.updateTask(appended).contains("noteAppend: true"))
 
     var raw = defaultUpdateTask()
     raw.note = "whole note"
@@ -2713,6 +2737,24 @@ enum ExtractionError: Error { case missing(String), unterminated(String) }
         return
     }
     #expect(!plain.noteReplaceAll)
+}
+
+@Test func parsesUpdateNoteAppend() throws {
+    let parsed = try CLI.parse(["ofctl", "update", "abc123", "--note-append", "more"])
+    guard case .update(let update) = parsed.command else {
+        Issue.record("expected an update command")
+        return
+    }
+    #expect(update.noteAppend)
+    #expect(update.note == "more")
+    #expect(!update.noteReplaceAll)
+
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "update", "abc123", "--note", "x", "--note-append", "y"])
+    }
+    #expect(throws: CLIError.self) {
+        try CLI.parse(["ofctl", "update", "abc123", "--note-append", "y", "--note-replace-all"])
+    }
 }
 
 // Regression: `update --project NAME` must resolve projects living in subfolders

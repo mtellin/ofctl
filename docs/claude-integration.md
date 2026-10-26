@@ -27,6 +27,7 @@ The command surface is intentionally narrow:
 - `add` for task creation; pass `--no-create-project` when filing into a project that should already exist, so a mistyped name fails instead of creating a duplicate project
 - `add-group` for action group creation
 - `update` for controlled edits, including moving one or more tasks into a project; `--project` auto-creates a missing project (use `--folder` to place it in a folder, or rely on the single-folder default inside a privacy scope), so a separate `project-create` step is usually unnecessary when moving tasks
+- `update TASK_ID --note-append TEXT` (or `--note-append-file PATH`) to add to a task note. Use it instead of read → concatenate → `--note-file`: `--note`/`--note-file` replace the freeform note, so an empty or failed read wipes it
 - `task-rename TASK_ID --to NEW_NAME` for task-only renames
 - `task-move` for controlled task ordering and moves into projects, action groups, or inbox
 - `project-status` for controlled project state changes

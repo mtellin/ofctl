@@ -745,6 +745,20 @@ ofctl update TASK_ID --note-file /tmp/of-note.md
 only the region above it is replaced, so writing prose can no longer destroy a
 task's state.
 
+To add to a note instead of replacing it, use `--note-append` (or
+`--note-append-file`). The text goes after the existing freeform note, separated by a
+blank line, and the state block stays at the end:
+
+```sh
+ofctl update TASK_ID --note-append "Called the supplier; part ships Friday."
+ofctl update TASK_ID --note-append-file /tmp/of-addition.md
+```
+
+Prefer it over reading the note, concatenating and writing it back: if that read comes
+back empty, the replacing write erases the note. Text that carries its own
+`=== ofctl-state ===` block is refused (use `task-state`), and `--note-append` cannot be
+combined with `--note`, `--note-file` or `--note-replace-all`.
+
 To overwrite the whole note, block included, pass `--note-replace-all`:
 
 ```sh

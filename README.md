@@ -282,6 +282,8 @@ ofctl project-delete "Home Maintenance"
   protection when moving to a project. `--note`/`--note-file` writes the freeform
   note and preserves any trailing `=== ofctl-state ===` block; `--note-replace-all`
   overwrites the whole note including that block.
+  `--note-append`/`--note-append-file` adds text after the existing note (block kept),
+  with no need to read the note first.
 - `ofctl task-rename`: rename one task by ID using OmniFocus's native task
   name property.
 - `ofctl task-move`: reorder one or more tasks before/after another task, or

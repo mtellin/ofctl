@@ -843,6 +843,7 @@ enum OmniJavaScript {
             estimatedMinutes: \(estimatedMinutes),
             note: \(note),
             noteReplaceAll: \(task.noteReplaceAll ? "true" : "false"),
+            noteAppend: \(task.noteAppend ? "true" : "false"),
             sequential: \(sequential),
             completedByChildren: \(completedByChildren),
             flagged: \(flagged),
@@ -1029,7 +1030,7 @@ enum OmniJavaScript {
           if (input.note !== null) {
             resolvedTasks.forEach(task => {
               const previous = noteTextToMarkdown(task.noteText);
-              assertNoteStorable(task, input.noteReplaceAll ? input.note : noteWithPreservedState(previous, input.note), previous);
+              assertNoteStorable(task, updatedTaskNote(previous, input.note, input.noteReplaceAll, input.noteAppend), previous);
             });
           }
 
@@ -1050,7 +1051,7 @@ enum OmniJavaScript {
 
           const resultTasks = resolvedTasks.map(task => {
             if (input.name !== null) { task.name = input.name; }
-            if (input.note !== null) { setMarkdownNoteVerified(task, input.noteReplaceAll ? input.note : noteWithPreservedState(noteTextToMarkdown(task.noteText), input.note)); }
+            if (input.note !== null) { setMarkdownNoteVerified(task, updatedTaskNote(noteTextToMarkdown(task.noteText), input.note, input.noteReplaceAll, input.noteAppend)); }
             if (input.deferDate !== undefined) { task.deferDate = parseDate(input.deferDate); }
             if (input.plannedDate !== undefined) { task.plannedDate = parseDate(input.plannedDate); }
             if (input.dueDate !== undefined) { task.dueDate = parseDate(input.dueDate); }
@@ -2873,6 +2874,24 @@ function noteWithPreservedState(existingMarkdown, text) {
   const parsed = parseStateBlock(existingMarkdown || "");
   if (!parsed.hasBlock) { return incoming.replace(/\s+$/, ""); }
   return composeStateNote(incoming, parsed.state, parsed.order);
+}
+
+// The note an update writes. --note-replace-all takes the text verbatim; --note-append
+// adds it after the existing freeform note, so a caller never reads the note first (an
+// empty read followed by a replacing write wiped a note, 2026-10-26); otherwise the text
+// replaces the freeform region. Both non-verbatim paths keep the state block.
+function updatedTaskNote(existingMarkdown, text, replaceAll, append) {
+  if (replaceAll) { return text; }
+  if (!append) { return noteWithPreservedState(existingMarkdown, text); }
+  if (hasWellFormedStateBlock(text || "")) {
+    throw new Error("--note-append text ends in an === ofctl-state === block; set state with task-state instead.");
+  }
+  const parsed = parseStateBlock(existingMarkdown || "");
+  const existing = (parsed.freeform || "").replace(/\s+$/, "");
+  const addition = (text || "").replace(/^\s+/, "").replace(/\s+$/, "");
+  const freeform = existing.length ? existing + "\n\n" + addition : addition;
+  if (!parsed.hasBlock) { return freeform; }
+  return composeStateNote(freeform, parsed.state, parsed.order);
 }
 
 // Read-back check. A note is written as markdown, so a state value holding

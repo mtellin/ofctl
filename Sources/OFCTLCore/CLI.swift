@@ -171,6 +171,9 @@ public struct UpdateTask: Equatable {
     /// `=== ofctl-state ===` block. Without it a note write replaces only the
     /// freeform region and preserves the existing block.
     public var noteReplaceAll: Bool = false
+    /// Add `note` after the existing freeform note instead of replacing it, so
+    /// a caller never has to read the note first. Preserves the state block.
+    public var noteAppend: Bool = false
     public var sequential: Bool?
     public var completedByChildren: Bool?
     public var complete: Bool
@@ -424,7 +427,7 @@ public enum CLI {
       ofctl search TEXT [any tasks option]   (= tasks --text TEXT: case-insensitive match on name or note)
       ofctl add NAME [--project NAME [--folder FOLDER_PATH] [--no-create-project]|--parent TASK_ID] [--tag NAME] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES] [--note TEXT|--note-file PATH] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--flag|--no-flag] [--dry-run] [--format json|text]
       ofctl add-group NAME [--project NAME [--folder FOLDER_PATH] [--no-create-project]|--parent TASK_ID] [--tag NAME] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--defer DATE] [--planned DATE] [--due DATE] [--repeat-rule RRULE] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES] [--note TEXT|--note-file PATH] [--flag|--no-flag] [--dry-run] [--format json|text]
-      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES|none] [--note TEXT|--note-file PATH] [--note-replace-all] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
+      ofctl update TASK_ID [TASK_ID ...] [--name NAME] [--project NAME|none [--folder FOLDER_PATH]] [--no-create-project] [--tag NAME|--add-tag NAME] [--remove-tag NAME] [--clear-tags] [--defer DATE|none] [--planned DATE|none] [--due DATE|none] [--repeat-rule RRULE|none] [--repeat-method fixed|due|defer | --repeat-schedule regularly|from-completion --repeat-anchor due|defer|planned --catch-up|--no-catch-up] [--duration MINUTES|none] [--note TEXT|--note-file PATH|--note-append TEXT|--note-append-file PATH] [--note-replace-all] [--sequential|--parallel] [--complete-with-children|--no-complete-with-children] [--complete] [--completed-at DATE] [--incomplete] [--flag|--no-flag] [--drop] [--all-occurrences] [--skip] [--dry-run] [--format json|text]
       ofctl task-rename TASK_ID --to NEW_NAME [--dry-run]
       ofctl task-move TASK_ID [TASK_ID ...] (--before TASK_ID|--after TASK_ID|--project NAME|--parent TASK_ID|--inbox) [--position beginning|ending] [--dry-run]
       ofctl project-status PROJECT_NAME --status active|on-hold|completed|dropped [--dry-run]
@@ -454,6 +457,8 @@ public enum CLI {
       update --note/--note-file and project-note write the freeform region only and preserve that
       block; pass --note-replace-all to overwrite the whole note including the block. Text that
       already ends in a well-formed block is also taken as a whole-note write.
+      update --note-append/--note-append-file adds text after the existing freeform note (blank line
+      between) and keeps the block, so appending never needs a read of the note first.
 
     Dates:
       Use ISO-like local dates: 2026-05-18 or 2026-05-18T09:00:00.
@@ -836,6 +841,7 @@ public enum CLI {
             flagged: nil,
             dryRun: false
         )
+        var noteSources = 0
 
         while let arg = parser.next() {
             switch arg {
@@ -890,8 +896,18 @@ public enum CLI {
                 }
             case "--note":
                 task.note = try parser.value(after: arg)
+                noteSources += 1
             case "--note-file":
                 task.note = try readNoteFile(try parser.value(after: arg))
+                noteSources += 1
+            case "--note-append":
+                task.note = try parser.value(after: arg)
+                task.noteAppend = true
+                noteSources += 1
+            case "--note-append-file":
+                task.note = try readNoteFile(try parser.value(after: arg))
+                task.noteAppend = true
+                noteSources += 1
             case "--note-replace-all":
                 task.noteReplaceAll = true
             case "--sequential":
@@ -947,6 +963,12 @@ public enum CLI {
         try validateRepeatOptions(task.repeatRule == nil || task.repeatRule == .some(nil), task.repeatMethod, task.repeatSchedule, task.repeatAnchor, task.catchUp)
         if task.folder != nil && task.project == nil {
             throw CLIError.usage("--folder requires --project")
+        }
+        if noteSources > 1 {
+            throw CLIError.usage("update accepts only one of --note, --note-file, --note-append or --note-append-file")
+        }
+        if task.noteAppend && task.noteReplaceAll {
+            throw CLIError.usage("--note-append cannot be combined with --note-replace-all")
         }
 
         return task
